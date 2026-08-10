@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Entity Name Changer</title>
+  </head>
+  <body>
+    <div class="container">
+      <main class="main-content">
+        <div class="form-container">
+          <header class="header">
+            <h1>Entity Name Changer</h1>
+            <p class="subtitle">
+              Rename entities and their associated elements
+            </p>
+          </header>
+          <div class="form-group">
+            <label for="entityDropdown">Select Entity</label>
+            <select id="entityDropdown" class="inputfield">
+              <option value="">Loading...</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="nameInput">New Name</label>
+            <input
+              id="nameInput"
+              class="inputfield"
+              type="text"
+              placeholder="Enter new entity name"
+            />
+          </div>
+          <div class="form-group-horizontal">
+            <label class="label-checkbox" for="renamePages"
+              >Also rename pages
+            </label>
+            <input type="checkbox" id="renamePages" />
+          </div>
+          <div id="pageWarning"></div>
+          <button id="changeName" class="btn-primary">Change Name</button>
+          <div id="logContainer"></div>
+        </div>
+
+        <div class="explanation-container">
+          <h2>How does this tool work?</h2>
+          <div class="explanation-content">
+            <div class="groupbox-item">
+              <div class="groupbox-title">
+                Read before using!<span class="groupbox-icon"></span>
+              </div>
+              <div class="groupbox-field">
+                <p>
+                  Errors on microflow activities like retrieves will cause the
+                  renaming to fail
+                </p>
+                <p>
+                  <b>Do not cancel</b> an attempt via the dialog message! It
+                  will cause a lot of errors.
+                </p>
+                <p>
+                  Updating all the variable usages can take a while, especially
+                  when the entity is used a lot. <b>Do not cancel</b>
+                </p>
+                <p>
+                  If a lot of non-sensical errors remain after a rename, press
+                  f4 to refresh.
+                </p>
+                <p>
+                  this is extension (and the ExtensibilityAPI) is still in beta,
+                  expect some bugs.
+                </p>
+              </div>
+            </div>
+            <div class="groupbox-item">
+              <div class="groupbox-title">
+                Which elements of the model will be renamed?<span
+                  class="groupbox-icon"
+                ></span>
+              </div>
+              <div class="groupbox-field">
+                <ul>
+                  <li>The chosen entity and its associations</li>
+                  <li>
+                    All microflow holding parameters or variables instances of
+                    entity and containing entity name in name.
+                  </li>
+                  <li>
+                    Pages(when selected) where the name contains the entityName
+                  </li>
+                </ul>
+              </div>
+            </div>
+            <div class="groupbox-item">
+              <div class="groupbox-title">
+                which microflow activities will be renamed?<span
+                  class="groupbox-icon"
+                ></span>
+              </div>
+              <div class="groupbox-field">
+                The following counts for all stated activities, the resulting
+                variable must be an instance of the chosen entity and have the
+                entity name in its name.
+                <ul>
+                  <li>Parameters</li>
+                  <li>Create actions</li>
+                  <li>Retrieve actions (database and association)</li>
+                  <li>Create list actions</li>
+                  <li>
+                    List operations (excluding filter by expression and range)
+                  </li>
+                  <li>microflow call actions</li>
+                </ul>
+              </div>
+            </div>
+            <div class="groupbox-item">
+              <div class="groupbox-title">
+                Why are not all elements updated?<span
+                  class="groupbox-icon"
+                ></span>
+              </div>
+              <div class="groupbox-field">
+                The current iteration of the ExtensibilityAPI does not give
+                enough access (or no access at al) too accurately rename other
+                elements than the ones renamed at this moment. This counts for
+                action activities and loops too.
+              </div>
+            </div>
+          </div>
+        </div>
+      </main>
+    </div>
+    <script type="module" src="main.js"></script>
+  </body>
+</html>

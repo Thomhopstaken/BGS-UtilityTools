@@ -1,0 +1,20 @@
+{
+  "name": "BGS-UtilityTools",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Extension for Mendix Studio Pro",
+  "license": "MIT",
+  "scripts": {
+    "build": "tsc --noEmit && node build-extension.mjs",
+    "build:dev": "tsc --noEmit && node build-extension.mjs --watch"
+  },
+  "dependencies": {
+    "@mendix/extensions-api": "^0.11.2-mendix.11.12.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.10",
+    "esbuild": "0.25.5",
+    "minimist": "^1.2.8",
+    "typescript": "^5.8.2"
+  }
+}
