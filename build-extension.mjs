@@ -18,7 +18,7 @@ const entryPoints = [
 ];
 
 entryPoints.push({
-  in: "src/EntityNameChanger/ui/index.ts",
+  in: "src/EntityNameChanger/main.ts",
   out: "dockablepane",
 });
 
