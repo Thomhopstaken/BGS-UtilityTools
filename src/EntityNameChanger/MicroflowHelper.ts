@@ -217,6 +217,8 @@ export class MicroflowHelper {
         case "Microflows$GenerateJumpToOptionsAction":
         case "Microflows$GetWorkflowActivityRecordsAction":
         case "Microflows$GetWorkflowDataAction":
+        case "Microflows$OpenWorkflowAction":
+        case "Microflows$NotifyWorkflowAction":
           if (action.workflowVariable !== null) {
             action.workflowVariable = this.UpdateValue(action.workflowVariable);
           }
@@ -287,60 +289,181 @@ export class MicroflowHelper {
               break;
           }
           break;
-        case "Microflows$LockWorkflowAction":
+
         case "Microflows$LogMessageAction":
+          for (const argument of action.messageTemplate.arguments) {
+            if (argument.expression !== null) {
+              argument.expression = this.UpdateValue(argument.expression);
+            }
+          }
+          if (action.node !== null) {
+            action.node = this.UpdateValue(action.node);
+          }
+          break;
         case "Microflows$IncrementCounterMeterAction":
+          if (action.name !== null) {
+            action.name = this.UpdateValue(action.name);
+          }
+          for (const tag of action.tags) {
+            if (tag.key !== null) {
+              tag.key = this.UpdateValue(tag.key);
+            }
+            if (tag.value !== null) {
+              tag.value = this.UpdateValue(tag.value);
+            }
+          }
+          break;
         case "Microflows$MicroflowCallAction":
+          for (const ParMap of action.microflowCall.parameterMappings) {
+            if (ParMap.argument !== null) {
+              ParMap.argument = this.UpdateValue(ParMap.argument);
+            }
+          }
+          break;
         case "Microflows$MLModelCallAction":
+          if (action.inputVariableName !== null) {
+            action.inputVariableName = this.UpdateValue(action.inputVariableName);
+          }
+          if (action.mlMappingDocument !== null) {
+            action.mlMappingDocument = this.UpdateValue(action.inputVariableName);
+          }
+          break;
         case "Microflows$NanoflowCallAction":
-        case "Microflows$NotifyWorkflowAction":
+          for (const ParMap of action.nanoflowCall.parameterMappings) {
+            if (ParMap.argument !== null) {
+              ParMap.argument = this.UpdateValue(ParMap.argument);
+            }
+          }
+          break;
         case "Microflows$OpenUserTaskAction":
-        case "Microflows$OpenWorkflowAction":
+          if (action.userTaskVariable !== null) {
+            action.userTaskVariable = this.UpdateValue(action.userTaskVariable);
+          }
+          break;
         case "Microflows$PushToClientAction":
+          if (action.dataVariableName !== null) {
+            action.dataVariableName = this.UpdateValue(action.dataVariableName);
+          }
+          break;
         case "Microflows$RestCallAction":
+          // do this later
+          break;
         case "Microflows$RestOperationCallAction":
+          // do this later
+          break;
         case "Microflows$RollbackAction":
+          if (action.rollbackVariableName !== null) {
+            action.rollbackVariableName = this.UpdateValue(action.rollbackVariableName);
+          }
+          break;
         case "Microflows$SendEmailAction":
+          //the fuck is this???
+          break;
         case "Microflows$SendExternalObject":
+          if (action.variableNameToBeSent !== null) {
+            action.variableNameToBeSent = this.UpdateValue(action.variableNameToBeSent);
+          }
+          break;
         case "Microflows$SetTaskOutcomeAction":
-        case "Microflows$ShowHomePageAction":
+          if (action.workflowTaskVariable !== null) {
+            action.workflowTaskVariable = this.UpdateValue(action.workflowTaskVariable);
+          }
+          break;
         case "Microflows$ShowMessageAction":
+          for (const arg of action.template.arguments) {
+            if (arg.expression !== null) {
+              arg.expression = this.UpdateValue(arg.expression);
+            }
+          }
+          break;
         case "Microflows$ShowPageAction":
+          if (action.numberOfPagesToClose !== null) {
+            action.numberOfPagesToClose = this.UpdateValue(action.numberOfPagesToClose);
+          }
+          const pageSettings = action.pageSettings;
+          if (pageSettings.titleOverride !== null) {
+            for (const arg of pageSettings.titleOverride.arguments) {
+              if (arg.expression !== null) {
+                arg.expression = this.UpdateValue(arg.expression);
+              }
+            }
+          }
+          for (const parMap of pageSettings.parameterMappings) {
+            if (parMap.argument !== null) {
+              parMap.argument = this.UpdateValue(parMap.argument);
+            }
+          }
+          break;
         case "Microflows$SynchronizeAction":
+          // Do later.
+          break;
         case "Microflows$TransformJsonAction":
-        case "Microflows$UnlockWorkflowAction":
+          if (action.inputVariableName !== null) {
+            action.inputVariableName = this.UpdateValue(action.inputVariableName);
+          }
+          break;
         case "Microflows$ValidationFeedbackAction":
+          if (action.objectVariableName !== null) {
+            action.objectVariableName = this.UpdateValue(action.objectVariableName);
+          }
+          for (const arg of action.feedbackTemplate.arguments) {
+            if (arg.expression !== null) {
+              arg.expression = this.UpdateValue(arg.expression);
+            }
+          }
+          break;
         case "Microflows$WebServiceCallAction":
+          // Do later.
+          break;
         case "Microflows$WorkflowCallAction":
+          if (action.workflow !== null) {
+            action.workflow = this.UpdateValue(action.workflow);
+          }
+          if (action.workflowContextVariable !== null) {
+            action.workflowContextVariable = this.UpdateValue(action.workflowContextVariable);
+          }
+          break;
         case "Microflows$WorkflowOperationAction":
+          if (action.operation.workflowVariable !== null) {
+            action.operation.workflowVariable = this.UpdateValue(action.operation.workflowVariable);
+          }
+          break;
         default:
           //TO TEST:
           //Microflows$CancelSynchronizationAction: has input, not reachable.
           //Microflows$CastAction: has input, not reachable.
           //Microflows$ClearFromClientAction: unsure what this is.
+          //Microflows$LockWorkflowAction: check this later. potentially skippable.
+          //Microflows$SendEmailAction: what the helly.
+          //SynchronizeAction: do later.
+          //RestCallAction: do later.
+          //RestOperationCallAction: do later.
+          //WebServiceCallAction: do later.
+          //UnlockWorkflowAction: unsure of input, check later.
 
           //Skippable:
           //Microflows$CreateListAction
           //Microflows$ExportXmlAction
+          //Microflows$ShowHomePageAction
           continue;
       }
     }
   }
   UpdateValue(value: string): string {
-    if (value.trim() === "" || value === null) {
+    if (value.trim() === "") {
       return value;
     }
 
     const regex = /\$[A-Za-z0-9_]+(?=[/)\]\s]|$)/g;
     var newValue: string = value;
-    const calledObjects = value.match(regex);
+    const calledVariables = value.match(regex);
 
-    for (const object in calledObjects) {
-      const actionHelper = this.actionHelperList.find((ah) => `$${ah.oldOutVarName}` === object);
+    for (const CalledVariable in calledVariables) {
+      const actionHelper = this.actionHelperList.find((ah) => `$${ah.oldOutVarName}` === CalledVariable);
       if (actionHelper === undefined) {
         continue;
       }
-      newValue = value.replaceAll(object, `$${actionHelper.newOutVarName}`);
+      newValue = value.replaceAll(CalledVariable, `$${actionHelper.newOutVarName}`);
     }
 
     return value !== newValue ? newValue : value;
