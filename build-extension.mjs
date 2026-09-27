@@ -1,13 +1,9 @@
 import * as esbuild from "esbuild";
-import {
-  copyToAppPlugin,
-  copyManifestPlugin,
-  commonConfig,
-} from "./build.helpers.mjs";
+import { copyToAppPlugin, copyManifestPlugin, commonConfig } from "./build.helpers.mjs";
 import parseArgs from "minimist";
 
 const outDir = `dist/BGS-UtilityTools`;
-const appDir = "C:\\Users\\Thom\\Mendix\\TestApp-TestApp-BGS-UtilityTools";
+const appDir = "C:\\Users\\ThomHopstaekn\\Mendix\\TestApp-main";
 const extensionDirectoryName = "extensions";
 
 const entryPoints = [
@@ -31,10 +27,7 @@ const buildContext = await esbuild.context({
     ".html": "text",
   },
   outdir: outDir,
-  plugins: [
-    copyManifestPlugin(outDir),
-    copyToAppPlugin(appDir, outDir, extensionDirectoryName),
-  ],
+  plugins: [copyManifestPlugin(outDir), copyToAppPlugin(appDir, outDir, extensionDirectoryName)],
   entryPoints,
 });
 
