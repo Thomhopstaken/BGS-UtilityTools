@@ -1,9 +1,12 @@
 import * as Mx from "@mendix/extensions-api";
 
+type DomainModelApi = Mx.ModelAccessWithComponent<Mx.IDomainModelApi, Mx.DomainModels.DomainModel>;
+type UnitInfos = readonly Readonly<Mx.Primitives.UnitInfo>[];
+
 export async function getEntities(
-  domainModels: any,
-  modulelist: any,
-  appStoreList: any,
+  domainModels: DomainModelApi,
+  modulelist: readonly Readonly<Mx.Projects.Module>[],
+  appStoreList: ReadonlySet<string>,
 ): Promise<Mx.DomainModels.Entity[]> {
   const DomainModelUnits = await domainModels.loadAll(
     (info: Mx.Primitives.UnitInfo) => info.moduleName !== undefined && !appStoreList.has(info.moduleName),
@@ -18,9 +21,9 @@ export async function getEntities(
   console.log(entities);
   return entities;
 }
-export function getAppstoreModuleNames(modulelist: any): Set<string> {
+export function getAppstoreModuleNames(modulelist: readonly Readonly<Mx.Projects.Module>[]): Set<string> {
   const appStoreList = new Set<string>(["System"]);
-  modulelist.forEach((module: any) => {
+  modulelist.forEach((module) => {
     if (module.fromAppStore) {
       appStoreList.add(module.name);
     }
@@ -29,7 +32,21 @@ export function getAppstoreModuleNames(modulelist: any): Set<string> {
   return appStoreList;
 }
 
-export function setQualifiedName(element: any, domainModels: readonly Readonly<Mx.Primitives.UnitInfo>[]): string {
+// The domain model and module an entity lives in, or null when its container is unknown.
+export function getEntityLocation(
+  entity: Mx.DomainModels.Entity,
+  domainModels: UnitInfos,
+): { domainModelId: string; moduleName: string } | null {
+  const domainModelId = Mx.getContainer<Mx.DomainModels.DomainModel>(entity)?.$ID;
+  const moduleName = domainModels.find((i) => i.$ID === domainModelId)?.moduleName;
+  console.debug(`entity ${entity.name}: domain model ${domainModelId}, module ${moduleName}`);
+  if (domainModelId === undefined || moduleName === undefined) {
+    return null;
+  }
+  return { domainModelId, moduleName };
+}
+
+export function setQualifiedName(element: any, domainModels: UnitInfos): string {
   const dmID = Mx.getContainer<Mx.DomainModels.DomainModel>(element)?.$ID;
   const domainName = domainModels.find((i) => i.$ID === dmID)?.moduleName;
   return `${domainName}.${element.name}`;

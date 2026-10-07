@@ -1,15 +1,20 @@
 import * as Mx from "@mendix/extensions-api";
 
-import { MicroflowHelper } from "./MicroflowHelper";
 import * as ui from "./ui";
-import { getEntities, getAppstoreModuleNames } from "./moduleModel";
-import { ChangeMicroflowNames } from "./microflowRenamer";
+import { getEntities, getAppstoreModuleNames, getEntityLocation } from "./moduleModel";
+import { createRenameContext } from "./framework/RenameContext";
+import { DocumentNameRegistry } from "./framework/DocumentNameRegistry";
+import { EntityRenameStep } from "./framework/EntityRenameStep";
+import { runRenameJob } from "./framework/RenameJob";
+import { createUpdaters } from "./updaters/updaterRegistry";
+import { validateNewName } from "./validation";
 
 export const component: Mx.IComponent = {
   async loaded(componentContext: Mx.ComponentContext) {
     //Initialization
     const studioPro = Mx.getStudioProApi(componentContext);
-    const { domainModels, modules, microflows } = studioPro.app.model;
+    const model = studioPro.app.model;
+    const { domainModels, modules, projects } = model;
     ui.loadUI(await studioPro.ui.preferences.getPreferences());
     const modulelist = await modules.getModules();
     const appStoreList = getAppstoreModuleNames(modulelist);
@@ -22,23 +27,59 @@ export const component: Mx.IComponent = {
       const entityID = document.querySelector<HTMLSelectElement>("#entityDropdown")!.value;
       const newName = document.querySelector<HTMLSelectElement>("#nameInput")!.value;
       const entity: Mx.DomainModels.Entity | undefined = entities.find((e) => e.$ID === entityID);
-      if (entity === undefined) {
-        ui.showStatus("Select an entity to rename.", "error");
-      } else if (newName === null || newName.length === 0) {
-        ui.showStatus("Fill in a new name.", "error");
-      } else if (newName.match(/^[A-Za-z]\w*$/)) {
-        const microflowHelper = new MicroflowHelper(entity, await domainModels.getUnitsInfo(), newName);
-        const result: string = await ChangeMicroflowNames(microflowHelper, microflows, appStoreList);
-        if (result === "Success") {
-          //this is somehow not working.
-          entity.name = newName;
-          domainModels.save(entity);
-          ui.showStatus(`${entity.name} successful`, result);
-          entities = await getEntities(domainModels, modulelist, appStoreList);
-          ui.populateDropdown(entities, await domainModels.getUnitsInfo());
+      const problem = validateNewName(entity, newName);
+      if (problem !== null) {
+        ui.showStatus(problem, "error");
+        // Without a problem the entity is defined; this only narrows the type.
+      } else if (entity !== undefined) {
+        ui.setBusy(true);
+        try {
+          const location = getEntityLocation(entity, await domainModels.getUnitsInfo());
+          if (location === null) {
+            ui.showStatus(`Could not find the module of ${entity.name}.`, "error");
+            return;
+          }
+          const context = createRenameContext({
+            entityId: entity.$ID,
+            domainModelId: location.domainModelId,
+            moduleName: location.moduleName,
+            oldName: entity.name,
+            newName,
+            excludedModules: appStoreList,
+            allEntityNames: entities.map((e) => e.name),
+          });
+          const entityStep = new EntityRenameStep(domainModels, context);
+          const problem = await entityStep.validate();
+          if (problem !== null) {
+            ui.showStatus(problem, "error");
+            return;
+          }
+          const documentNames = DocumentNameRegistry.fromModulesTree(await projects.getModulesTree());
+          const updaters = createUpdaters(model, {
+            context,
+            documentNames,
+            options: { renamePages: ui.isRenamePagesChecked() },
+          });
+          const { dialog, report } = await runRenameJob(
+            {
+              updaters,
+              runProgress: (title, steps) => studioPro.ui.dialogs.showProgressDialog(title, steps),
+              finalStep: entityStep,
+            },
+            context,
+          );
+          ui.showReport(dialog, report);
+          if (report.entityRenamed) {
+            ui.clearNameInput();
+            entities = await getEntities(domainModels, modulelist, appStoreList);
+            ui.populateDropdown(entities, await domainModels.getUnitsInfo());
+          }
+        } catch (error: unknown) {
+          console.info(`rename failed: ${error}`);
+          ui.showStatus(`Rename failed: ${error instanceof Error ? error.message : error}`, "error");
+        } finally {
+          ui.setBusy(false);
         }
-      } else {
-        ui.showStatus("Name contains spaces or illegal characters", "error");
       }
     });
   },

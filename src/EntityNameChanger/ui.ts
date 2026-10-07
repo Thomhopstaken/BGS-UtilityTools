@@ -1,4 +1,5 @@
 import * as Mx from "@mendix/extensions-api";
+import type { RenameReport } from "./framework/RenameReport";
 import { setQualifiedName } from "./moduleModel";
 
 import markup from "./ui/index.html";
@@ -56,6 +57,49 @@ export function initGroupBoxes(): void {
       groupbox.classList.toggle("open");
     });
   });
+}
+
+// Second guard next to the modal progress dialog: no new run can start while one is busy.
+export function setBusy(busy: boolean): void {
+  console.debug(`pane busy: ${busy}`);
+  for (const id of ["changeName", "entityDropdown", "nameInput", "renamePages"]) {
+    const element = document.getElementById(id) as HTMLButtonElement | HTMLInputElement | HTMLSelectElement | null;
+    if (element !== null) {
+      element.disabled = busy;
+    }
+  }
+}
+
+export function clearNameInput(): void {
+  const input = document.querySelector<HTMLInputElement>("#nameInput");
+  if (input !== null) {
+    input.value = "";
+    console.debug("name input cleared");
+  }
+}
+
+export function isRenamePagesChecked(): boolean {
+  return document.querySelector<HTMLInputElement>("#renamePages")?.checked ?? false;
+}
+
+export function showReport(dialog: Mx.ProgressDialogResult, report: RenameReport): void {
+  switch (dialog.result) {
+    case "Success":
+      showStatus(
+        report.entityRenamed ? "Rename finished." : "Rename finished, entity not renamed.",
+        report.entityRenamed ? "success" : "warning",
+      );
+      break;
+    case "UserCancelled":
+      showStatus("Rename cancelled; documents updated so far are kept. Rerun to finish.", "warning");
+      break;
+    case "Failure":
+      showStatus(`Rename failed at '${dialog.failedStep?.stepTitle}': ${dialog.failedStep?.error}`, "error");
+      break;
+  }
+  for (const line of report.summary()) {
+    showStatus(line, line.startsWith("Failed") ? "error" : "info");
+  }
 }
 
 export function showStatus(message: string, type: string): void {

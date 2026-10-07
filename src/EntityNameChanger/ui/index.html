@@ -54,12 +54,17 @@
                   renaming to fail
                 </p>
                 <p>
-                  <b>Do not cancel</b> an attempt via the dialog message! It
-                  will cause a lot of errors.
+                  Studio Pro is blocked while the rename runs; the progress
+                  dialog shows which documents are being updated.
                 </p>
                 <p>
-                  Updating all the variable usages can take a while, especially
-                  when the entity is used a lot. <b>Do not cancel</b>
+                  Cancelling stops after the current batch. Documents updated
+                  so far are kept and the entity is not renamed; run it again
+                  to finish.
+                </p>
+                <p>
+                  If documents fail to update, the entity is not renamed. The
+                  failures are listed below the button.
                 </p>
                 <p>
                   If a lot of non-sensical errors remain after a rename, press
@@ -79,13 +84,18 @@
               </div>
               <div class="groupbox-field">
                 <ul>
-                  <li>The chosen entity and its associations</li>
+                  <li>The chosen entity</li>
                   <li>
-                    All microflow holding parameters or variables instances of
-                    entity and containing entity name in name.
+                    Microflows whose name contains the entity name and that
+                    use the entity (parameter, variable or return type).
                   </li>
                   <li>
-                    Pages(when selected) where the name contains the entityName
+                    Names that are part of another entity's name (e.g.
+                    OrderLine when renaming Order) are left alone.
+                  </li>
+                  <li>
+                    Coming later: associations, nanoflows, pages (when
+                    selected) and other documents.
                   </li>
                 </ul>
               </div>
@@ -101,15 +111,15 @@
                 variable must be an instance of the chosen entity and have the
                 entity name in its name.
                 <ul>
-                  <li>Parameters</li>
-                  <li>Create actions</li>
+                  <li>Parameters and loop iterators</li>
+                  <li>Create object, create list and create variable</li>
                   <li>Retrieve actions (database and association)</li>
-                  <li>Create list actions</li>
-                  <li>
-                    List operations (excluding filter by expression and range)
-                  </li>
-                  <li>microflow call actions</li>
+                  <li>List operations and cast object</li>
+                  <li>Microflow, Java action and REST calls</li>
+                  <li>Workflow data, web service, import and ML model calls</li>
                 </ul>
+                All usages of a renamed variable in expressions and actions
+                are updated as well.
               </div>
             </div>
             <div class="groupbox-item">

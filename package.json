@@ -6,15 +6,18 @@
   "license": "MIT",
   "scripts": {
     "build": "tsc --noEmit && node build-extension.mjs",
-    "build:dev": "tsc --noEmit && node build-extension.mjs --watch"
+    "build:dev": "tsc --noEmit && node build-extension.mjs --watch",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@mendix/extensions-api": "^0.11.4-mendix.11.12.4"
   },
   "devDependencies": {
     "@types/node": "^22.13.10",
-    "esbuild": "0.25.5",
+    "esbuild": "0.28.2",
     "minimist": "^1.2.8",
-    "typescript": "^5.8.2"
+    "typescript": "^5.8.2",
+    "vitest": "5.0.3"
   }
 }
