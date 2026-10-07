@@ -1,6 +1,7 @@
 import type { DomainModels, Primitives } from "@mendix/extensions-api";
 import { describe, expect, it } from "vitest";
 import { fakeResolveAccess, fakeUnitInfo } from "../../helpers/fakes";
+import { QualifiedNameRenames } from "../../../../EntityNameChanger/framework/QualifiedNameRenames";
 import { emptyFlowReferences, ReferenceCache } from "../../../../EntityNameChanger/updaters/microflows/ReferenceCache";
 import { type DomainModelLookup, loadAssociationEnds, ReferenceResolver } from "../../../../EntityNameChanger/updaters/microflows/ReferenceResolver";
 
@@ -25,18 +26,22 @@ function fakeDomainModels(elements: Record<string, unknown>, models: { id: strin
   return lookup;
 }
 
-function setup(options: { domainModels?: ReturnType<typeof fakeDomainModels>; elements?: Record<string, unknown> } = {}) {
+function setup(
+  options: { domainModels?: ReturnType<typeof fakeDomainModels>; elements?: Record<string, unknown>; renames?: QualifiedNameRenames } = {},
+) {
   const elements = options.elements ?? {};
   const apis = {
     microflows: fakeResolveAccess(elements),
+    nanoflows: fakeResolveAccess(elements),
     domainModels: options.domainModels ?? fakeDomainModels({}),
     javaActions: fakeResolveAccess(elements),
+    javaScriptActions: fakeResolveAccess(elements),
     workflows: fakeResolveAccess(elements),
     consumedRestServices: fakeResolveAccess(elements),
     mlMappingDocuments: fakeResolveAccess(elements),
   };
   const cache = new ReferenceCache();
-  return { apis, cache, resolver: new ReferenceResolver(apis, cache) };
+  return { apis, cache, resolver: new ReferenceResolver(apis, cache, options.renames ?? new QualifiedNameRenames()) };
 }
 
 describe("ReferenceResolver", () => {
@@ -57,6 +62,58 @@ describe("ReferenceResolver", () => {
       ["M.Void", null],
       ["M.Missing", null],
     ]);
+  });
+
+  it("resolves nanoflow return entities", async () => {
+    const { apis, cache, resolver } = setup({
+      elements: { "Microflows$Nanoflow:M.Get": { microflowReturnType: { $Type: "DataTypes$ListType", entity: "M.Order" } } },
+    });
+    const refs = emptyFlowReferences();
+    refs.nanoflows.add("M.Get").add("M.Missing");
+    await resolver.resolveAll(refs);
+    await resolver.resolveAll(refs);
+    expect(apis.nanoflows.calls).toHaveLength(2);
+    expect([...cache.nanoflowReturnEntities]).toEqual([
+      ["M.Get", "M.Order"],
+      ["M.Missing", null],
+    ]);
+  });
+
+  it("resolves flows renamed earlier in the job by their new name, cached under the old one", async () => {
+    const renames = new QualifiedNameRenames();
+    renames.addDocument("M", "GET_Order", "GET_Purchase");
+    renames.addDocument("M", "NF_Order", "NF_Purchase");
+    const { apis, cache, resolver } = setup({
+      renames,
+      elements: {
+        "Microflows$Microflow:M.GET_Purchase": { microflowReturnType: { $Type: "DataTypes$ObjectType", entity: "M.Order" } },
+        "Microflows$Nanoflow:M.NF_Purchase": { microflowReturnType: { $Type: "DataTypes$ObjectType", entity: "M.Order" } },
+      },
+    });
+    const refs = emptyFlowReferences();
+    refs.microflows.add("M.GET_Order");
+    refs.nanoflows.add("M.NF_Order");
+    await resolver.resolveAll(refs);
+    expect(apis.microflows.calls.map((c) => c.qualifiedName)).toEqual(["M.GET_Purchase"]);
+    expect(apis.nanoflows.calls.map((c) => c.qualifiedName)).toEqual(["M.NF_Purchase"]);
+    expect(cache.microflowReturnEntities.get("M.GET_Order")).toBe("M.Order");
+    expect(cache.nanoflowReturnEntities.get("M.NF_Order")).toBe("M.Order");
+  });
+
+  it("stores JavaScript action signatures", async () => {
+    const { cache, resolver } = setup({
+      elements: {
+        "JavaScriptActions$JavaScriptAction:M.Js": {
+          actionReturnType: { $Type: "CodeActions$ConcreteEntityType", entity: "M.Order" },
+          actionParameters: [],
+        },
+      },
+    });
+    const refs = emptyFlowReferences();
+    refs.javaScriptActions.add("M.Js").add("M.Missing");
+    await resolver.resolveAll(refs);
+    expect(cache.javaScriptActions.get("M.Js")).toEqual({ returnEntity: "M.Order", returnTypeParameter: null, parameters: [] });
+    expect(cache.javaScriptActions.get("M.Missing")).toBeNull();
   });
 
   it("caches null when resolve throws", async () => {

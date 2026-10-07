@@ -19,25 +19,44 @@ export type UnitFailure = {
 export class RenameReport {
   readonly changed: UnitOutcome[] = [];
   readonly failures: UnitFailure[] = [];
-  checkedUnits = 0;
+  // Unit ids; a unit is visited by a rename and a reference updater, so it is counted once.
+  private readonly checkedIds = new Set<string>();
+  private readonly changedIds = new Set<string>();
   skippedRenames = 0;
+  updatedReferences = 0;
   entityRenamed = false;
   entitySkipReason: string | null = null;
+  // Set when the job stopped after the entity was renamed.
+  incompleteReason: string | null = null;
+
+  get checkedUnits(): number {
+    return this.checkedIds.size;
+  }
+
+  get changedUnits(): number {
+    return this.changedIds.size;
+  }
+
+  wasChanged(unitId: string): boolean {
+    return this.changedIds.has(unitId);
+  }
 
   get hasErrors(): boolean {
     return this.failures.length > 0;
   }
 
   addResult(label: string, info: Readonly<Primitives.UnitInfo>, result: UnitUpdateResult): void {
-    this.checkedUnits++;
+    this.checkedIds.add(info.$ID);
     this.skippedRenames += result.skippedRenames;
+    this.updatedReferences += result.updatedReferences;
     if (result.changed) {
+      this.changedIds.add(info.$ID);
       this.changed.push({ label, unitId: info.$ID, name: info.name ?? info.$ID, result });
     }
   }
 
   addError(label: string, info: Readonly<Primitives.UnitInfo>, error: unknown): void {
-    this.checkedUnits++;
+    this.checkedIds.add(info.$ID);
     const message = error instanceof Error ? error.message : String(error);
     console.info(`${label} ${info.moduleName}.${info.name} failed: ${message}`);
     this.failures.push({ label, unitId: info.$ID, name: `${info.moduleName}.${info.name}`, error: message });
@@ -48,11 +67,19 @@ export class RenameReport {
     this.entitySkipReason = reason;
   }
 
+  markIncomplete(reason: string): void {
+    console.info(`rename incomplete: ${reason}`);
+    this.incompleteReason = reason;
+  }
+
   summary(): string[] {
-    const lines = [`Checked ${this.checkedUnits} documents, updated ${this.changed.length}.`];
+    const lines = [`Checked ${this.checkedUnits} documents, updated ${this.changedUnits}.`];
     const renamedDocuments = this.changed.filter((c) => c.result.renamedTo !== null);
     if (renamedDocuments.length > 0) {
       lines.push(`Renamed ${renamedDocuments.length} documents.`);
+    }
+    if (this.updatedReferences > 0) {
+      lines.push(`Updated ${this.updatedReferences} references to the renamed entity, documents and parameters.`);
     }
     if (this.skippedRenames > 0) {
       lines.push(`Skipped ${this.skippedRenames} renames because the new name is already in use.`);
@@ -62,6 +89,9 @@ export class RenameReport {
     }
     if (this.entitySkipReason !== null) {
       lines.push(`Entity not renamed: ${this.entitySkipReason}`);
+    }
+    if (this.incompleteReason !== null) {
+      lines.push(`Not finished: ${this.incompleteReason}`);
     }
     return lines;
   }

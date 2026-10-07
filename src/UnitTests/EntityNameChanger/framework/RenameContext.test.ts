@@ -1,13 +1,31 @@
 import { describe, expect, it } from "vitest";
 import { fakeContext, fakeUnitInfo } from "../helpers/fakes";
-import { isInScope } from "../../../EntityNameChanger/framework/RenameContext";
+import { isEntityQname, isInScope } from "../../../EntityNameChanger/framework/RenameContext";
 
 describe("createRenameContext", () => {
   it("builds the old qualified name and protected names", () => {
     const context = fakeContext({ allEntityNames: ["Order", "OrderLine", "Customer"] });
     expect(context.oldQualifiedName).toBe("MyModule.Order");
+    expect(context.newQualifiedName).toBe("MyModule.Purchase");
     expect(context.protectedNames).toEqual(["OrderLine"]);
     expect(context.newName).toBe("Purchase");
+  });
+});
+
+describe("isEntityQname", () => {
+  const context = fakeContext();
+
+  it("accepts the old and the new qualified name", () => {
+    expect(isEntityQname("MyModule.Order", context)).toBe(true);
+    expect(isEntityQname("MyModule.Purchase", context)).toBe(true);
+  });
+
+  it("rejects other names, null and undefined", () => {
+    expect(isEntityQname("MyModule.OrderLine", context)).toBe(false);
+    expect(isEntityQname("Other.Order", context)).toBe(false);
+    expect(isEntityQname("Order", context)).toBe(false);
+    expect(isEntityQname(null, context)).toBe(false);
+    expect(isEntityQname(undefined, context)).toBe(false);
   });
 });
 

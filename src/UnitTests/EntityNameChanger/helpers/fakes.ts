@@ -117,7 +117,7 @@ export function fakeUpdater(
   update: (unit: Primitives.UnitBase, info: Readonly<Primitives.UnitInfo>) => Promise<UnitUpdateResult> = async () => ({
     ...UNCHANGED,
   }),
-  props: Partial<Pick<UnitUpdater, "label" | "unitType" | "implemented" | "description">> = {},
+  props: Partial<Pick<UnitUpdater, "label" | "title" | "unitType" | "implemented" | "description">> = {},
 ): UnitUpdater {
   return {
     label: "Microflows",
@@ -131,5 +131,5 @@ export function fakeUpdater(
 }
 
 export function changed(overrides: Partial<UnitUpdateResult> = {}): UnitUpdateResult {
-  return { changed: true, renamedTo: null, renamedVariables: 1, skippedRenames: 0, ...overrides };
+  return { changed: true, renamedTo: null, renamedVariables: 1, updatedReferences: 0, skippedRenames: 0, ...overrides };
 }

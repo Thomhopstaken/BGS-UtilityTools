@@ -23,7 +23,7 @@ describe("emptyFlowReferences", () => {
     refs.microflows.add("A.B");
     expect(emptyFlowReferences().microflows.size).toBe(0);
     expect(Object.keys(refs).sort()).toEqual(
-      ["associations", "javaActions", "microflows", "mlMappings", "restOperations", "workflows"].sort(),
+      ["associations", "javaActions", "javaScriptActions", "microflows", "mlMappings", "nanoflows", "restOperations", "workflows"].sort(),
     );
   });
 });

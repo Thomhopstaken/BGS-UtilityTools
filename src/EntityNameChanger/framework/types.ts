@@ -1,4 +1,5 @@
 import type { Primitives, ProgressDialogResult, ProgressDialogStep } from "@mendix/extensions-api";
+import type { RenameReport } from "./RenameReport";
 
 // Type-only imports from the Mendix package everywhere in the framework: its runtime needs Studio Pro.
 
@@ -15,6 +16,8 @@ export type UnitUpdateResult = {
   // New document name, null when the document kept its name.
   renamedTo: string | null;
   renamedVariables: number;
+  // Entity references rewritten from the old to the new qualified name.
+  updatedReferences: number;
   // Renames that were found but not applied, e.g. because the new name is taken.
   skippedRenames: number;
 };
@@ -23,17 +26,25 @@ export const UNCHANGED: Readonly<UnitUpdateResult> = Object.freeze({
   changed: false,
   renamedTo: null,
   renamedVariables: 0,
+  updatedReferences: 0,
   skippedRenames: 0,
 });
+
+// plan: read-only, decides renames; rename: applies them to the unit, which the job then saves.
+export type UpdaterMode = "plan" | "rename";
 
 // Updates one document type. update() only mutates the unit in memory; the job saves it.
 export interface UnitUpdater<TUnit extends Primitives.UnitBase = Primitives.UnitBase> {
   readonly label: string;
+  // Progress step title; defaults to "Updating <label>".
+  readonly title?: string;
   readonly unitType: string;
   // Stubs are listed but never loaded.
   readonly implemented: boolean;
   readonly description: string;
   readonly access: UnitAccess<TUnit>;
+  // Filters units when the batch runs, so it can depend on earlier steps; all units when absent.
+  accepts?(info: Readonly<Primitives.UnitInfo>, report: RenameReport): boolean;
   update(unit: TUnit, info: Readonly<Primitives.UnitInfo>): Promise<UnitUpdateResult>;
 }
 

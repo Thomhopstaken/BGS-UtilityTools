@@ -1,5 +1,6 @@
 import type { DomainModels, Primitives } from "@mendix/extensions-api";
-import type { FinalStep } from "./RenameJob";
+import { rewriteQualifiedNamesInUnit } from "../updaters/shared/qualifiedNameRewrite";
+import type { EntityStep } from "./RenameJob";
 import type { RenameContext } from "./RenameContext";
 import type { RenameReport } from "./RenameReport";
 
@@ -9,8 +10,10 @@ export interface DomainModelAccess {
   save<TElement extends Primitives.ElementBase>(element: TElement): Promise<void>;
 }
 
-// Renames the entity itself. Runs last, so every updater before it matched on the old qualified name.
-export class EntityRenameStep implements FinalStep {
+// Renames the entity itself, after planning and before any document is changed, so every document saved later
+// references an existing entity. References to the entity inside its own domain model (access rules,
+// generalizations) are rewritten in the same save; the reference pass handles the rest of that domain model.
+export class EntityRenameStep implements EntityStep {
   readonly title = "Rename entity";
   private readonly domainModels: DomainModelAccess;
   private readonly context: RenameContext;
@@ -29,14 +32,18 @@ export class EntityRenameStep implements FinalStep {
     return findEntityProblem(domainModel, this.context);
   }
 
+  // Returns a message (which stops the job) when planning failed or the rename is not possible; nothing is changed then.
   async run(report: RenameReport): Promise<true | string> {
     if (report.hasErrors) {
-      report.skipEntity(`${report.failures.length} documents failed to update; fix them and rerun`);
-      return true;
+      const reason = `${report.failures.length} documents could not be checked; nothing was changed`;
+      report.skipEntity(reason);
+      return reason;
     }
     const domainModel = await this.loadDomainModel();
     if (domainModel === null) {
-      return `Domain model of ${this.context.moduleName} not found.`;
+      const reason = `Domain model of ${this.context.moduleName} not found.`;
+      report.skipEntity(reason);
+      return reason;
     }
     const problem = findEntityProblem(domainModel, this.context);
     if (problem !== null) {
@@ -45,9 +52,14 @@ export class EntityRenameStep implements FinalStep {
     }
     const entity = domainModel.entities.find((e) => e.$ID === this.context.entityId)!;
     entity.name = this.context.newName;
+    const entityOnly = new Map([[this.context.oldQualifiedName, this.context.newQualifiedName]]);
+    const references = rewriteQualifiedNamesInUnit(domainModel, entityOnly);
     await this.domainModels.save(domainModel);
+    report.updatedReferences += references;
     report.entityRenamed = true;
-    console.info(`renamed entity ${this.context.oldQualifiedName} to ${this.context.newName}`);
+    console.info(
+      `renamed entity ${this.context.oldQualifiedName} to ${this.context.newName}, ${references} references in its domain model updated`,
+    );
     return true;
   }
 

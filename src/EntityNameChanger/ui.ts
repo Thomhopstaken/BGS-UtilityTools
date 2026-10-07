@@ -91,7 +91,12 @@ export function showReport(dialog: Mx.ProgressDialogResult, report: RenameReport
       );
       break;
     case "UserCancelled":
-      showStatus("Rename cancelled; documents updated so far are kept. Rerun to finish.", "warning");
+      showStatus(
+        report.entityRenamed
+          ? "Rename cancelled after the entity was renamed; documents updated so far are kept."
+          : "Rename cancelled; nothing was changed.",
+        "warning",
+      );
       break;
     case "Failure":
       showStatus(`Rename failed at '${dialog.failedStep?.stepTitle}': ${dialog.failedStep?.error}`, "error");

@@ -391,6 +391,102 @@ describe("detectEntityVariables", () => {
   });
 });
 
+describe("nanoflow actions", () => {
+  it("collects called nanoflows and JavaScript actions that return a value", () => {
+    const refs = newHelper().collectReferences([
+      activity(action("NanoflowCallAction", { useReturnVariable: true, nanoflowCall: { nanoflow: "M.Nf" } })),
+      activity(action("NanoflowCallAction", { useReturnVariable: false, nanoflowCall: { nanoflow: "M.NoReturn" } })),
+      activity(action("NanoflowCallAction", { useReturnVariable: true, nanoflowCall: { nanoflow: null } })),
+      activity(action("JavaScriptActionCallAction", { useReturnVariable: true, javaScriptAction: "M.Js" })),
+      activity(action("JavaScriptActionCallAction", { useReturnVariable: false, javaScriptAction: "M.NoJs" })),
+    ]);
+    expect([...refs.nanoflows]).toEqual(["M.Nf"]);
+    expect([...refs.javaScriptActions]).toEqual(["M.Js"]);
+  });
+
+  it("detects the output of a nanoflow call returning the entity", () => {
+    const references = new ReferenceCache();
+    references.nanoflowReturnEntities.set("M.Get", QNAME);
+    references.nanoflowReturnEntities.set("M.Other", "MyModule.Customer");
+    const call = (nanoflow: string, outputVariableName: string, useReturnVariable = true) =>
+      activity(action("NanoflowCallAction", { useReturnVariable, nanoflowCall: { nanoflow, parameterMappings: [] }, outputVariableName }));
+    const { helper } = detect([call("M.Get", "Order"), call("M.Other", "OrderCustomer"), call("M.Get", "OrderUnused", false), call("M.Unresolved", "OrderX")], references);
+    expect([...helper.entityVariables]).toEqual(["Order"]);
+  });
+
+  it("detects the output of a JavaScript action returning the entity", () => {
+    const references = new ReferenceCache();
+    references.javaScriptActions.set("M.Js", { returnEntity: QNAME, returnTypeParameter: null, parameters: [] });
+    references.javaScriptActions.set("M.Missing", null);
+    const call = (javaScriptAction: string, outputVariableName: string) =>
+      activity(action("JavaScriptActionCallAction", { useReturnVariable: true, javaScriptAction, outputVariableName, parameterMappings: [] }));
+    const { helper } = detect([call("M.Js", "OrderResult"), call("M.Missing", "OrderOther")], references);
+    expect([...helper.entityVariables]).toEqual(["OrderResult"]);
+  });
+
+  it("detects a JavaScript action type parameter bound by an entity-type argument", () => {
+    const references = new ReferenceCache();
+    references.javaScriptActions.set("M.Js", { returnEntity: null, returnTypeParameter: "T", parameters: [{ name: "Type", kind: "entityType", typeParameter: "T" }] });
+    const mappings = [{ parameter: "M.Js.Type", parameterValue: { $Type: "Microflows$EntityTypeCodeActionParameterValue", entity: QNAME } }];
+    const { helper } = detect([activity(action("JavaScriptActionCallAction", { useReturnVariable: true, javaScriptAction: "M.Js", outputVariableName: "OrderResult", parameterMappings: mappings }))], references);
+    expect([...helper.entityVariables]).toEqual(["OrderResult"]);
+  });
+});
+
+describe("parameterRenames", () => {
+  it("lists only renamed parameters, not other variables", () => {
+    const { helper } = detect([
+      parameter("Order", objectType(QNAME)),
+      parameter("OrderList", listType(QNAME)),
+      activity(action("CreateObjectAction", { entity: QNAME, outputVariableName: "NewOrder", items: [] })),
+    ]);
+    expect(helper.parameterRenames()).toEqual([
+      { oldName: "Order", newName: "Purchase" },
+      { oldName: "OrderList", newName: "PurchaseList" },
+    ]);
+  });
+
+  it("is empty without parameter renames", () => {
+    expect(detect([parameter("Customer", objectType(QNAME))]).helper.parameterRenames()).toEqual([]);
+  });
+});
+
+// Units rewritten earlier in the job (or by an earlier partial run) already hold the new qualified name.
+describe("detection with the new qualified name", () => {
+  const NEW_QNAME = "MyModule.Purchase";
+
+  it("detects parameters, created objects and database retrieves of the new name", () => {
+    const { helper } = detect([
+      parameter("Order", objectType(NEW_QNAME)),
+      activity(action("CreateObjectAction", { entity: NEW_QNAME, outputVariableName: "NewOrder", items: [] })),
+      activity(action("RetrieveAction", { retrieveSource: { $Type: "Microflows$DatabaseRetrieveSource", entity: NEW_QNAME }, outputVariableName: "OrderList" })),
+    ]);
+    expect(renamesOf(helper)).toEqual([
+      ["Order", "Purchase"],
+      ["NewOrder", "NewPurchase"],
+      ["OrderList", "PurchaseList"],
+    ]);
+  });
+
+  it("detects resolved return entities with the new name", () => {
+    const references = new ReferenceCache();
+    references.microflowReturnEntities.set("MyModule.Sub", NEW_QNAME);
+    const call = action("MicroflowCallAction", { useReturnVariable: true, microflowCall: { microflow: "MyModule.Sub", parameterMappings: [] }, outputVariableName: "SubOrder" });
+    const { helper } = detect([activity(call)], references);
+    expect(renamesOf(helper)).toEqual([["SubOrder", "SubPurchase"]]);
+  });
+
+  it("counts a new-name return type as using the entity", () => {
+    const { helper, flow } = detect([], undefined, { name: "GET_Order", returnType: listType(NEW_QNAME) });
+    expect(helper.usesEntity(flow)).toBe(true);
+  });
+
+  it("still ignores other entities", () => {
+    const { helper } = detect([parameter("Order", objectType("MyModule.OrderLine"))]);
+    expect(helper.renames).toEqual([]);
+  });
+});
+
 describe("reset", () => {
   it("clears the per-flow state", () => {
     const { helper } = detect([parameter("Order", objectType(QNAME)), activity(action("CreateVariableAction", { variableType: objectType(QNAME), variableName: "Purchase" }))]);

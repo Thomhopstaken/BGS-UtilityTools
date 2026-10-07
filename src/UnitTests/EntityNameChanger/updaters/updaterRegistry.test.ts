@@ -1,8 +1,18 @@
+import type { Primitives } from "@mendix/extensions-api";
 import { describe, expect, it } from "vitest";
 import { DocumentNameRegistry } from "../../../EntityNameChanger/framework/DocumentNameRegistry";
-import { fakeContext } from "../helpers/fakes";
-import { MicroflowUpdater } from "../../../EntityNameChanger/updaters/microflows/MicroflowUpdater";
-import { type AppModel, createUpdaters, EXCLUDED_DOCUMENT_TYPES } from "../../../EntityNameChanger/updaters/updaterRegistry";
+import { QualifiedNameRenames } from "../../../EntityNameChanger/framework/QualifiedNameRenames";
+import { fakeContext, fakeUnitInfo } from "../helpers/fakes";
+import { FlowUpdater } from "../../../EntityNameChanger/updaters/microflows/FlowUpdater";
+import { PageUpdater } from "../../../EntityNameChanger/updaters/pages/PageUpdater";
+import { ReferenceUpdater } from "../../../EntityNameChanger/updaters/references/ReferenceUpdater";
+import { RefreshUpdater } from "../../../EntityNameChanger/updaters/refresh/RefreshUpdater";
+import {
+  type AppModel,
+  createUpdaters,
+  EXCLUDED_DOCUMENT_TYPES,
+  REFERENCE_DOCUMENT_TYPES,
+} from "../../../EntityNameChanger/updaters/updaterRegistry";
 
 // Every model API the registry passes on; each is a distinct marker object.
 const API_NAMES = [
@@ -11,6 +21,8 @@ const API_NAMES = [
   "rules",
   "pages",
   "snippets",
+  "layouts",
+  "menuDocuments",
   "workflows",
   "importMappings",
   "exportMappings",
@@ -21,61 +33,208 @@ const API_NAMES = [
   "documentTemplates",
   "dataSets",
   "domainModels",
+  "scheduledEvents",
+  "publishedRestServices",
+  "publishedODataServices2",
+  "publishedWebServices",
   "consumedRestServices",
   "mlMappingDocuments",
 ];
 const model = Object.fromEntries(API_NAMES.map((name) => [name, { api: name }])) as unknown as AppModel;
 
-function create(renamePages: boolean) {
+const PLAN_LABELS = [
+  "Microflows (plan)",
+  "Nanoflows (plan)",
+  "Rules",
+  "Pages (plan)",
+  "Snippets (plan)",
+  "Workflows",
+  "Import mappings",
+  "Export mappings",
+  "JSON structures",
+  "Message definitions",
+  "Java actions",
+  "JavaScript actions",
+  "Document templates",
+  "Datasets",
+  "Associations",
+];
+
+const RENAME_LABELS = ["Microflows", "Nanoflows", "Pages", "Snippets"];
+
+const REFERENCE_LABELS = [
+  "References in domain models",
+  "References in microflows",
+  "References in nanoflows",
+  "References in rules",
+  "References in pages",
+  "References in snippets",
+  "References in layouts",
+  "References in menus",
+  "References in workflows",
+  "References in import mappings",
+  "References in export mappings",
+  "References in message definitions",
+  "References in datasets",
+  "References in document templates",
+  "References in scheduled events",
+  "References in published REST services",
+  "References in published OData services",
+  "References in published web services",
+];
+
+const REFRESH_LABELS = ["Refresh pages", "Refresh snippets"];
+
+const context = fakeContext();
+
+function create(renamePages = false, renames = QualifiedNameRenames.forEntity(context)) {
   return createUpdaters(model, {
-    context: fakeContext(),
+    context,
     documentNames: new DocumentNameRegistry(),
+    renames,
     options: { renamePages },
   });
 }
 
+const all = (groups = create()) => [...groups.planners, ...groups.renamers, ...groups.referenceUpdaters, ...groups.refreshers];
+const byLabel = (label: string, groups = create()) => all(groups).find((u) => u.label === label)!;
+
+function flowWithOrderParameter(name: string): Primitives.UnitBase {
+  return {
+    $Type: "Microflows$Microflow",
+    name,
+    objectCollection: {
+      objects: [
+        {
+          $Type: "Microflows$MicroflowParameterObject",
+          $ID: "p1",
+          name: "Order",
+          defaultValue: null,
+          variableType: { $Type: "DataTypes$ObjectType", entity: "MyModule.Order" },
+        },
+      ],
+    },
+    flows: [],
+    parameters: [{ name: "Order" }],
+    microflowReturnType: { $Type: "DataTypes$VoidType" },
+    returnVariableName: "",
+  } as unknown as Primitives.UnitBase;
+}
+
 describe("createUpdaters", () => {
-  it("lists every updater in execution order when pages are selected", () => {
-    expect(create(true).map((u) => u.label)).toEqual([
-      "Microflows",
-      "Nanoflows",
-      "Rules",
-      "Pages",
-      "Snippets",
-      "Workflows",
-      "Import mappings",
-      "Export mappings",
-      "JSON structures",
-      "Message definitions",
-      "Java actions",
-      "JavaScript actions",
-      "Document templates",
-      "Datasets",
-      "Associations",
+  it("returns planners, renamers, reference updaters and refreshers", () => {
+    const groups = create();
+    expect(groups.planners.map((u) => u.label)).toEqual(PLAN_LABELS);
+    expect(groups.renamers.map((u) => u.label)).toEqual(RENAME_LABELS);
+    expect(groups.referenceUpdaters.map((u) => u.label)).toEqual(REFERENCE_LABELS);
+    expect(groups.refreshers.map((u) => u.label)).toEqual(REFRESH_LABELS);
+  });
+
+  it("titles the plan steps", () => {
+    const titles = all().map((u) => u.title).filter((t) => t !== undefined);
+    expect(titles).toEqual(["Planning microflows", "Planning nanoflows", "Planning pages", "Planning snippets", "Refreshing pages", "Refreshing snippets"]);
+  });
+
+  it("ignores the deprecated renamePages option", () => {
+    expect(all(create(true)).map((u) => u.label)).toEqual(all(create(false)).map((u) => u.label));
+  });
+
+  it("implements the flow and page planners, every renamer and every reference updater", () => {
+    expect(all().filter((u) => u.implemented).map((u) => u.label)).toEqual([
+      "Microflows (plan)",
+      "Nanoflows (plan)",
+      "Pages (plan)",
+      "Snippets (plan)",
+      ...RENAME_LABELS,
+      ...REFERENCE_LABELS,
+      ...REFRESH_LABELS,
     ]);
   });
 
-  it("leaves out pages and snippets when not selected", () => {
-    const labels = create(false).map((u) => u.label);
-    expect(labels).not.toContain("Pages");
-    expect(labels).not.toContain("Snippets");
-    expect(labels.at(-1)).toBe("Associations");
+  it("passes the matching model api and unit type to the flow and page updaters", () => {
+    const groups = create();
+    for (const [label, type, api] of [
+      ["Microflows", "Microflows$Microflow", "microflows"],
+      ["Nanoflows", "Microflows$Nanoflow", "nanoflows"],
+    ] as const) {
+      for (const suffix of ["", " (plan)"]) {
+        expect(byLabel(label + suffix, groups)).toBeInstanceOf(FlowUpdater);
+        expect(byLabel(label + suffix, groups).access).toBe(model[api]);
+        expect(byLabel(label + suffix, groups).unitType).toBe(type);
+      }
+    }
+    for (const [label, type, api] of [
+      ["Pages", "Pages$Page", "pages"],
+      ["Snippets", "Pages$Snippet", "snippets"],
+    ] as const) {
+      for (const suffix of ["", " (plan)"]) {
+        expect(byLabel(label + suffix, groups)).toBeInstanceOf(PageUpdater);
+        expect(byLabel(label + suffix, groups).access).toBe(model[api]);
+        expect(byLabel(label + suffix, groups).unitType).toBe(type);
+      }
+    }
+    expect(byLabel("Associations", groups).access).toBe(model.domainModels);
+    expect(byLabel("Datasets", groups).unitType).toBe("DataSets$DataSet");
   });
 
-  it("only implements microflows, wired to the microflows api", () => {
-    const updaters = create(true);
-    expect(updaters.filter((u) => u.implemented).map((u) => u.label)).toEqual(["Microflows"]);
-    expect(updaters[0]).toBeInstanceOf(MicroflowUpdater);
-    expect(updaters[0].access).toBe(model.microflows);
+  it("updates references in domain models before flows and pages", () => {
+    const labels = create().referenceUpdaters.map((u) => u.label);
+    expect(labels[0]).toBe("References in domain models");
+    expect(labels.indexOf("References in domain models")).toBeLessThan(labels.indexOf("References in pages"));
   });
 
-  it("passes the matching model api and unit type to each stub", () => {
-    const byLabel = new Map(create(true).map((u) => [u.label, u]));
-    expect(byLabel.get("Pages")?.access).toBe(model.pages);
-    expect(byLabel.get("Pages")?.unitType).toBe("Pages$Page");
-    expect(byLabel.get("Associations")?.access).toBe(model.domainModels);
-    expect(byLabel.get("Associations")?.unitType).toBe("DomainModels$DomainModel");
-    expect(byLabel.get("Datasets")?.unitType).toBe("DataSets$DataSet");
+  it("passes the matching model api and unit type to each reference updater", () => {
+    const groups = create();
+    for (const type of REFERENCE_DOCUMENT_TYPES) {
+      const updater = byLabel(`References in ${type.documents}`, groups);
+      expect(updater).toBeInstanceOf(ReferenceUpdater);
+      expect(updater.access).toBe(model[type.api]);
+      expect(updater.unitType).toBe(type.unitType);
+    }
+    expect(byLabel("References in message definitions", groups).access).toBe(model.messageDefinitions);
+  });
+
+  it("refreshes pages and snippets with their model api", () => {
+    const groups = create();
+    expect(groups.refreshers.every((u) => u instanceof RefreshUpdater)).toBe(true);
+    expect(byLabel("Refresh pages", groups)).toMatchObject({ access: model.pages, unitType: "Pages$Page" });
+    expect(byLabel("Refresh snippets", groups)).toMatchObject({ access: model.snippets, unitType: "Pages$Snippet" });
+  });
+
+  it("shares the rename map and plan between the phases", async () => {
+    const groups = create();
+    const flow = flowWithOrderParameter("ACT_Order");
+    const flowInfo = fakeUnitInfo("mf", "Microflows$Microflow", "MyModule", "ACT_Order");
+    await byLabel("Microflows (plan)", groups).update(flow, flowInfo);
+    expect((flow as unknown as { name: string }).name).toBe("ACT_Order");
+
+    expect(await byLabel("Microflows", groups).update(flow, flowInfo)).toMatchObject({ changed: true, renamedTo: "ACT_Purchase", renamedVariables: 1 });
+
+    const entityRef = { $Type: "DomainModels$DirectEntityRef", entity: "MyModule.Order" };
+    const call = { $Type: "Pages$MicroflowSettings", microflow: "MyModule.ACT_Order" };
+    const page = { $Type: "Pages$Page", name: "Customer_Edit", parameters: [], variables: [], widgets: [entityRef, call] } as unknown as Primitives.UnitBase;
+    expect(await byLabel("References in pages", groups).update(page, fakeUnitInfo("p", "Pages$Page", "MyModule", "Customer_Edit"))).toMatchObject({ changed: true, updatedReferences: 2 });
+    expect(entityRef.entity).toBe("MyModule.Purchase");
+    expect(call.microflow).toBe("MyModule.ACT_Purchase");
+  });
+
+  it("updates references in every domain model, the entity's own included", async () => {
+    const references = byLabel("References in domain models");
+    const own = { $Type: "DomainModels$DomainModel", handler: { $Type: "DomainModels$EventHandler", microflow: "MyModule.Order_Handler" }, generalization: "MyModule.Order" };
+    expect((await references.update(own as unknown as Primitives.UnitBase, fakeUnitInfo(context.domainModelId, "DomainModels$DomainModel", "MyModule"))).changed).toBe(true);
+    expect(own.generalization).toBe("MyModule.Purchase");
+    const other = { $Type: "DomainModels$DomainModel", child: "MyModule.Order" };
+    expect((await references.update(other as unknown as Primitives.UnitBase, fakeUnitInfo("dm-2", "DomainModels$DomainModel", "Invoicing"))).changed).toBe(true);
+    expect(other.child).toBe("MyModule.Purchase");
+  });
+
+  it("uses the rename map it is given", async () => {
+    const renames = QualifiedNameRenames.forEntity(context);
+    const groups = create(false, renames);
+    renames.addDocument("MyModule", "ACT_Order", "ACT_Purchase");
+    const event = { $Type: "ScheduledEvents$ScheduledEvent", microflow: "MyModule.ACT_Order" };
+    await byLabel("References in scheduled events", groups).update(event as unknown as Primitives.UnitBase, fakeUnitInfo("se", "ScheduledEvents$ScheduledEvent", "MyModule"));
+    expect(event.microflow).toBe("MyModule.ACT_Purchase");
   });
 
   it("documents the excluded types with a reason", () => {

@@ -1,4 +1,4 @@
-import type { CodeActions, DataTypes, JavaActions, MLMappings, Rest, Workflows } from "@mendix/extensions-api";
+import type { CodeActions, DataTypes, MLMappings, Rest, Workflows } from "@mendix/extensions-api";
 
 // The two entity ends of an association, as stored in the model (UNVERIFIED: $ID or qualified name).
 export type AssociationEnds = { parent: string; child: string };
@@ -7,7 +7,9 @@ export type AssociationEnds = { parent: string; child: string };
 export type FlowReferences = {
   associations: Set<string>;
   microflows: Set<string>;
+  nanoflows: Set<string>;
   javaActions: Set<string>;
+  javaScriptActions: Set<string>;
   workflows: Set<string>;
   restOperations: Set<string>;
   mlMappings: Set<string>;
@@ -17,14 +19,16 @@ export function emptyFlowReferences(): FlowReferences {
   return {
     associations: new Set<string>(),
     microflows: new Set<string>(),
+    nanoflows: new Set<string>(),
     javaActions: new Set<string>(),
+    javaScriptActions: new Set<string>(),
     workflows: new Set<string>(),
     restOperations: new Set<string>(),
     mlMappings: new Set<string>(),
   };
 }
 
-// A java action parameter that can bind a type parameter.
+// A java or JavaScript action parameter that can bind a type parameter.
 export type JavaActionParameterFact = {
   name: string;
   // entityType: an entity-type argument; typed: an object/list argument whose type uses the type parameter.
@@ -44,7 +48,9 @@ export type JavaActionSignature = {
 export class ReferenceCache {
   readonly associations = new Map<string, AssociationEnds | null>();
   readonly microflowReturnEntities = new Map<string, string | null>();
+  readonly nanoflowReturnEntities = new Map<string, string | null>();
   readonly javaActions = new Map<string, JavaActionSignature | null>();
+  readonly javaScriptActions = new Map<string, JavaActionSignature | null>();
   readonly workflowContextEntities = new Map<string, string | null>();
   readonly restOperationEntities = new Map<string, string | null>();
   readonly mlOutputEntities = new Map<string, string | null>();
@@ -58,7 +64,8 @@ export function entityOfDataType(dataType: DataTypes.DataType | null | undefined
   return dataType.$Type === "DataTypes$ObjectType" || dataType.$Type === "DataTypes$ListType" ? dataType.entity : null;
 }
 
-export function javaActionSignature(javaAction: JavaActions.JavaAction): JavaActionSignature {
+// Java and JavaScript actions share the CodeAction signature.
+export function javaActionSignature(javaAction: CodeActions.CodeAction): JavaActionSignature {
   const returnType = javaAction.actionReturnType;
   const entityType = returnType.$Type === "CodeActions$ListType" ? returnType.parameter : returnType;
   const signature: JavaActionSignature = { returnEntity: null, returnTypeParameter: null, parameters: [] };

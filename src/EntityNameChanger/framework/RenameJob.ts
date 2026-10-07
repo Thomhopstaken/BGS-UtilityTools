@@ -4,16 +4,19 @@ import type { RenameContext } from "./RenameContext";
 import { RenameReport } from "./RenameReport";
 import type { ProgressRunner, UnitUpdater } from "./types";
 
-// The last step of a job; it only runs when every updater step before it has finished.
-export interface FinalStep {
+// Renames the entity; runs after planning and before any document is changed.
+export interface EntityStep {
   readonly title: string;
   run(report: RenameReport): Promise<true | string>;
 }
 
 export type RenameJobDeps = {
+  // Read-only; decide every rename before anything is changed.
+  planners: readonly UnitUpdater[];
+  entityStep: EntityStep;
+  // Run after the entity rename, in order: declarations (documents, parameters, variables), references, refresh.
   updaters: readonly UnitUpdater[];
   runProgress: ProgressRunner;
-  finalStep: FinalStep;
   batchSize?: number;
 };
 
@@ -23,15 +26,24 @@ export type RenameJobResult = {
 };
 
 // Plans the batches, then runs them in the modal progress dialog, which blocks Studio Pro until done.
+// Order: plan (read-only) -> rename entity -> rename declarations -> update references. Every document gets its
+// last save after all names it references exist, because Studio Pro checks a document only when it is saved.
 export async function runRenameJob(deps: RenameJobDeps, context: RenameContext): Promise<RenameJobResult> {
   const report = new RenameReport();
-  const batches = await planBatches(deps.updaters, context, deps.batchSize ?? BATCH_SIZE);
-  const steps = buildSteps(batches, report, deps.finalStep, context);
+  const batchSize = deps.batchSize ?? BATCH_SIZE;
+  const planBatchList = await planBatches(deps.planners, context, batchSize);
+  const updateBatchList = await planBatches(deps.updaters, context, batchSize);
+  const steps = buildSteps(planBatchList, deps.entityStep, updateBatchList, report, context);
   console.info(`starting rename job with ${steps.length} steps`);
   const dialog = await deps.runProgress(`Renaming ${context.oldQualifiedName} to ${context.newName}`, steps);
   console.info(`rename job ended: ${dialog.result}${dialog.failedStep ? ` (${dialog.failedStep.stepTitle}: ${dialog.failedStep.error})` : ""}`);
-  if (dialog.result !== "Success" && !report.entityRenamed && report.entitySkipReason === null) {
-    report.skipEntity(dialog.result === "UserCancelled" ? "cancelled by user" : "the process failed");
+  if (dialog.result !== "Success") {
+    const reason = dialog.result === "UserCancelled" ? "cancelled by user" : "the process failed";
+    if (report.entityRenamed) {
+      report.markIncomplete(`${reason}; the entity was renamed but the remaining documents were not updated, check the error list`);
+    } else if (report.entitySkipReason === null) {
+      report.skipEntity(`${reason}; nothing was changed`);
+    }
   }
   return { dialog, report };
 }
@@ -41,28 +53,30 @@ export function unitDisplayName(info: Readonly<Primitives.UnitInfo>): string {
   return info.moduleName === undefined ? name : `${info.moduleName}.${name}`;
 }
 
-// One step per updater (e.g. "Updating microflows") that runs all its batches.
+// One step per updater (e.g. "Planning microflows", "Updating microflows") that runs all its batches; the entity
+// step sits between the planners and the updaters.
 export function buildSteps(
-  batches: readonly PlannedBatch[],
+  planBatchList: readonly PlannedBatch[],
+  entityStep: EntityStep,
+  updateBatchList: readonly PlannedBatch[],
   report: RenameReport,
-  finalStep: FinalStep,
   context: RenameContext,
 ): ProgressDialogStep[] {
-  const steps: ProgressDialogStep[] = [];
-  for (const [updater, group] of groupByUpdater(batches)) {
-    const total = group[0].total;
-    steps.push({
-      title: `Updating ${updater.label.toLowerCase()}`,
-      description: `${updater.description} (${context.oldName} -> ${context.newName}), ${total} documents`,
+  const stepsFor = (batches: readonly PlannedBatch[]): ProgressDialogStep[] =>
+    [...groupByUpdater(batches)].map(([updater, group]) => ({
+      title: updater.title ?? `Updating ${updater.label.toLowerCase()}`,
+      description: `${updater.description} (${context.oldName} -> ${context.newName}), ${group[0].total} documents`,
       action: () => runBatches(group, report),
-    });
-  }
-  steps.push({
-    title: finalStep.title,
-    description: `${context.oldQualifiedName} -> ${context.newName}`,
-    action: () => finalStep.run(report),
-  });
-  return steps;
+    }));
+  return [
+    ...stepsFor(planBatchList),
+    {
+      title: entityStep.title,
+      description: `${context.oldQualifiedName} -> ${context.newName}`,
+      action: () => entityStep.run(report),
+    },
+    ...stepsFor(updateBatchList),
+  ];
 }
 
 // Keeps planner order; a Map iterates in insertion order.
@@ -93,9 +107,14 @@ export async function runBatches(batches: readonly PlannedBatch[], report: Renam
 // Loads one batch, updates and saves each unit; the batch is dropped afterwards so memory stays bounded.
 // Unit errors are reported, only a load failure stops the job.
 export async function runBatch(batch: PlannedBatch, report: RenameReport): Promise<true | string> {
-  const { updater, infos, first, last, total } = batch;
+  const { updater, first, last, total } = batch;
+  const infos = updater.accepts === undefined ? batch.infos : batch.infos.filter((info) => updater.accepts!(info, report));
+  if (infos.length === 0) {
+    console.debug(`${updater.label}: nothing to do in ${first}-${last} of ${total}`);
+    return true;
+  }
   const infoById = new Map(infos.map((info) => [info.$ID, info]));
-  console.info(`${updater.label}: loading ${first}-${last} of ${total}`);
+  console.info(`${updater.label}: loading ${infos.length} units of ${first}-${last} of ${total}`);
   let units: Primitives.UnitBase[];
   try {
     units = await updater.access.loadAll((info) => infoById.has(info.$ID), infoById.size);

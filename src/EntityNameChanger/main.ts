@@ -4,6 +4,7 @@ import * as ui from "./ui";
 import { getEntities, getAppstoreModuleNames, getEntityLocation } from "./moduleModel";
 import { createRenameContext } from "./framework/RenameContext";
 import { DocumentNameRegistry } from "./framework/DocumentNameRegistry";
+import { QualifiedNameRenames } from "./framework/QualifiedNameRenames";
 import { EntityRenameStep } from "./framework/EntityRenameStep";
 import { runRenameJob } from "./framework/RenameJob";
 import { createUpdaters } from "./updaters/updaterRegistry";
@@ -55,16 +56,18 @@ export const component: Mx.IComponent = {
             return;
           }
           const documentNames = DocumentNameRegistry.fromModulesTree(await projects.getModulesTree());
-          const updaters = createUpdaters(model, {
+          const groups = createUpdaters(model, {
             context,
             documentNames,
+            renames: QualifiedNameRenames.forEntity(context),
             options: { renamePages: ui.isRenamePagesChecked() },
           });
           const { dialog, report } = await runRenameJob(
             {
-              updaters,
+              planners: groups.planners,
+              entityStep,
+              updaters: [...groups.renamers, ...groups.referenceUpdaters, ...groups.refreshers],
               runProgress: (title, steps) => studioPro.ui.dialogs.showProgressDialog(title, steps),
-              finalStep: entityStep,
             },
             context,
           );

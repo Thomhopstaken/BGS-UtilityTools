@@ -1,6 +1,7 @@
 import type { DataTypes, Microflows } from "@mendix/extensions-api";
 import type { NamingPolicy } from "../../framework/NamingPolicy";
-import type { RenameContext } from "../../framework/RenameContext";
+import { isEntityQname, type RenameContext } from "../../framework/RenameContext";
+import { type RenameMap, rewriteExpression, rewriteName } from "../shared/variableRewrite";
 import {
   emptyFlowReferences,
   entityOfDataType,
@@ -18,9 +19,13 @@ type Candidate = { name: string; target: object; apply: (name: string) => void }
 // A named parameter in a flow's parameters list (microflow and rule parameters).
 type NamedParameter = { name: string };
 
+// Java and JavaScript action parameter mappings have the same shape.
+type CodeActionParameterMapping = Microflows.JavaActionParameterMapping | Microflows.JavaScriptActionParameterMapping;
+
 export class MicroflowHelper {
   readonly entityId: string;
   readonly entityQname: string;
+  readonly context: RenameContext;
   readonly naming: NamingPolicy;
   // Shared for the whole job; filled by ReferenceResolver.
   readonly references: ReferenceCache;
@@ -35,6 +40,7 @@ export class MicroflowHelper {
   constructor(context: RenameContext, naming: NamingPolicy, references: ReferenceCache) {
     this.entityId = context.entityId;
     this.entityQname = context.oldQualifiedName;
+    this.context = context;
     this.naming = naming;
     this.references = references;
     console.info(`MicroflowHelper for ${this.entityQname} (${this.entityId}) -> ${context.newName}`);
@@ -79,6 +85,16 @@ export class MicroflowHelper {
         case "Microflows$JavaActionCallAction":
           if (action.useReturnVariable && action.javaAction !== null) {
             result.javaActions.add(action.javaAction);
+          }
+          break;
+        case "Microflows$NanoflowCallAction":
+          if (action.useReturnVariable && action.nanoflowCall.nanoflow !== null) {
+            result.nanoflows.add(action.nanoflowCall.nanoflow);
+          }
+          break;
+        case "Microflows$JavaScriptActionCallAction":
+          if (action.useReturnVariable && action.javaScriptAction !== null) {
+            result.javaScriptActions.add(action.javaScriptAction);
           }
           break;
         case "Microflows$GetWorkflowDataAction":
@@ -145,7 +161,7 @@ export class MicroflowHelper {
     for (const obj of objects) {
       switch (obj.$Type) {
         case "Microflows$MicroflowParameterObject":
-          // UNVERIFIED: relies on Studio Pro updating the callers' parameter mappings on rename.
+          // Callers' parameter mappings are updated by the reference pass (see parameterRenames).
           if (this.isEntityType(obj.variableType)) {
             console.debug(
               `parameter ${obj.name} is of type ${this.entityQname} (hasVariableNameBeenChanged=${obj.hasVariableNameBeenChanged})`,
@@ -184,7 +200,7 @@ export class MicroflowHelper {
     switch (action.$Type) {
       case "Microflows$CreateObjectAction":
       case "Microflows$CreateListAction":
-        if (action.entity === this.entityQname) {
+        if (this.isEntityQname(action.entity)) {
           this.addOutput(found, action);
         }
         break;
@@ -198,21 +214,22 @@ export class MicroflowHelper {
           this.addCandidate(found, action.variableName, action, (name) => (action.variableName = name));
         }
         break;
-      case "Microflows$MicroflowCallAction": {
-        const called = action.microflowCall.microflow;
-        if (!action.useReturnVariable || called === null) {
-          break;
-        }
-        const returnEntity = this.references.microflowReturnEntities.get(called);
-        if (returnEntity === undefined) {
-          console.debug(`return type of ${called} not resolved`);
-          break;
-        }
-        if (returnEntity === this.entityQname) {
+      case "Microflows$MicroflowCallAction":
+        if (
+          action.useReturnVariable &&
+          this.returnsEntity(action.microflowCall.microflow, this.references.microflowReturnEntities)
+        ) {
           this.addOutput(found, action);
         }
         break;
-      }
+      case "Microflows$NanoflowCallAction":
+        if (
+          action.useReturnVariable &&
+          this.returnsEntity(action.nanoflowCall.nanoflow, this.references.nanoflowReturnEntities)
+        ) {
+          this.addOutput(found, action);
+        }
+        break;
       case "Microflows$ListOperationAction": {
         const operation = action.operation;
         // Contains and ListEquals return a Boolean, not an entity object or list.
@@ -230,7 +247,12 @@ export class MicroflowHelper {
         }
         break;
       case "Microflows$JavaActionCallAction":
-        if (this.javaActionReturnsEntity(action)) {
+        if (this.codeActionReturnsEntity(action, action.javaAction, this.references.javaActions)) {
+          this.addOutput(found, action);
+        }
+        break;
+      case "Microflows$JavaScriptActionCallAction":
+        if (this.codeActionReturnsEntity(action, action.javaScriptAction, this.references.javaScriptActions)) {
           this.addOutput(found, action);
         }
         break;
@@ -255,7 +277,7 @@ export class MicroflowHelper {
         break;
       case "Microflows$GetWorkflowDataAction":
         // The workflow data object is the workflow's context parameter.
-        if (action.workflow !== null && this.references.workflowContextEntities.get(action.workflow) === this.entityQname) {
+        if (action.workflow !== null && this.isEntityQname(this.references.workflowContextEntities.get(action.workflow))) {
           this.addOutput(found, action);
         }
         break;
@@ -264,7 +286,7 @@ export class MicroflowHelper {
         if (
           outputVariable !== null &&
           action.operation !== null &&
-          this.references.restOperationEntities.get(action.operation) === this.entityQname
+          this.isEntityQname(this.references.restOperationEntities.get(action.operation))
         ) {
           this.addCandidate(
             found,
@@ -278,7 +300,7 @@ export class MicroflowHelper {
       case "Microflows$MLModelCallAction":
         if (
           action.mlMappingDocument !== null &&
-          this.references.mlOutputEntities.get(action.mlMappingDocument) === this.entityQname
+          this.isEntityQname(this.references.mlOutputEntities.get(action.mlMappingDocument))
         ) {
           this.addOutput(found, action);
         }
@@ -293,7 +315,7 @@ export class MicroflowHelper {
     const retrieve = action.retrieveSource;
     switch (retrieve.$Type) {
       case "Microflows$DatabaseRetrieveSource":
-        return retrieve.entity === this.entityQname;
+        return this.isEntityQname(retrieve.entity);
       case "Microflows$AssociationRetrieveSource": {
         if (retrieve.association === null) {
           return false;
@@ -352,7 +374,7 @@ export class MicroflowHelper {
           (c): c is Microflows.InheritanceCase => c.$Type === "Microflows$InheritanceCase",
         );
         console.debug(`cast path reaches split on ${origin.splitVariableName} with case ${inheritanceCase?.value}`);
-        if (inheritanceCase?.value !== this.entityQname) {
+        if (!this.isEntityQname(inheritanceCase?.value)) {
           return false;
         }
         foundSplit = true;
@@ -361,17 +383,35 @@ export class MicroflowHelper {
     return foundSplit;
   }
 
-  private javaActionReturnsEntity(action: Microflows.JavaActionCallAction): boolean {
-    if (!action.useReturnVariable || action.javaAction === null) {
+  // Return entity of a called microflow or nanoflow, from the cache filled by ReferenceResolver.
+  private returnsEntity(called: string | null, returnEntities: ReadonlyMap<string, string | null>): boolean {
+    if (called === null) {
       return false;
     }
-    const signature = this.references.javaActions.get(action.javaAction);
+    const returnEntity = returnEntities.get(called);
+    if (returnEntity === undefined) {
+      console.debug(`return type of ${called} not resolved`);
+      return false;
+    }
+    return this.isEntityQname(returnEntity);
+  }
+
+  // Java and JavaScript actions: a concrete return entity, or a type parameter bound by the arguments.
+  private codeActionReturnsEntity(
+    action: { useReturnVariable: boolean; parameterMappings: CodeActionParameterMapping[] },
+    codeAction: string | null,
+    signatures: ReadonlyMap<string, JavaActionSignature | null>,
+  ): boolean {
+    if (!action.useReturnVariable || codeAction === null) {
+      return false;
+    }
+    const signature = signatures.get(codeAction);
     if (signature === undefined || signature === null) {
-      console.debug(`java action ${action.javaAction} not resolved`);
+      console.debug(`code action ${codeAction} not resolved`);
       return false;
     }
     if (signature.returnEntity !== null) {
-      return signature.returnEntity === this.entityQname;
+      return this.isEntityQname(signature.returnEntity);
     }
     if (signature.returnTypeParameter !== null) {
       return this.typeParameterIsEntity(signature, action.parameterMappings, signature.returnTypeParameter);
@@ -383,7 +423,7 @@ export class MicroflowHelper {
   // UNVERIFIED: mapping.parameter is assumed to be the parameter name or end with ".<name>".
   private typeParameterIsEntity(
     signature: JavaActionSignature,
-    mappings: Microflows.JavaActionParameterMapping[],
+    mappings: CodeActionParameterMapping[],
     typeParameter: string,
   ): boolean {
     for (const parameter of signature.parameters) {
@@ -399,7 +439,7 @@ export class MicroflowHelper {
       const value = mapping.parameterValue;
       if (parameter.kind === "entityType" && value.$Type === "Microflows$EntityTypeCodeActionParameterValue") {
         console.debug(`type parameter ${typeParameter} bound to ${value.entity}`);
-        return value.entity === this.entityQname;
+        return this.isEntityQname(value.entity);
       }
       if (
         parameter.kind === "typed" &&
@@ -417,11 +457,15 @@ export class MicroflowHelper {
   }
 
   private isEntityType(dataType: DataTypes.DataType | null | undefined): boolean {
-    return entityOfDataType(dataType) === this.entityQname;
+    return this.isEntityQname(entityOfDataType(dataType));
+  }
+
+  private isEntityQname(qname: string | null | undefined): boolean {
+    return isEntityQname(qname, this.context);
   }
 
   private isEntityRef(ref: string): boolean {
-    return ref === this.entityId || ref === this.entityQname;
+    return ref === this.entityId || this.isEntityQname(ref);
   }
 
   // Renames the parameter object and the matching entry in the flow's parameters list.
@@ -562,6 +606,13 @@ export class MicroflowHelper {
     console.debug(`return variable name '${flow.returnVariableName}' -> '${newName}'`);
     flow.returnVariableName = newName;
     return true;
+  }
+
+  // Renamed parameters of this flow; callers reference them as Module.Flow.Parameter.
+  parameterRenames(): { oldName: string; newName: string }[] {
+    return this.renames
+      .filter((r) => (r.target as { $Type?: string }).$Type === "Microflows$MicroflowParameterObject")
+      .map((r) => ({ oldName: r.oldName, newName: r.newName }));
   }
 
   applyRenames(): void {
@@ -1026,30 +1077,24 @@ export class MicroflowHelper {
         break;
     }
   }
-  // For expressions: replaces every `$Name` token whose full name matches a renamed variable, in one pass.
-  // The regex takes the whole identifier, so `$OrderLine` is never touched when only `$Order` is renamed.
-  // Single-quoted string literals ('' is an escaped quote) are matched first and left as they are.
+  // For expressions: see rewriteExpression.
   UpdateValue(value: string): string {
-    const newValue = value.replace(/'(?:[^']|'')*'|\$([A-Za-z_][A-Za-z0-9_]*)/g, (match: string, name?: string) => {
-      if (name === undefined) {
-        return match;
-      }
-      const rename = this.renames.find((r) => r.oldName === name);
-      return rename === undefined ? match : `$${rename.newName}`;
-    });
-    if (newValue !== value) {
-      console.debug(`updated expression '${value}' to '${newValue}'`);
-    }
-    return newValue;
+    return rewriteExpression(value, this.renameMap());
   }
   // For properties that hold a bare variable name (no `$`), e.g. mappingArgumentVariableName.
   UpdateVariableName(name: string): string {
-    const rename = this.renames.find((r) => r.oldName === name);
-    if (rename === undefined) {
-      return name;
+    return rewriteName(name, this.renameMap());
+  }
+
+  // First rename per old name wins, as before.
+  private renameMap(): RenameMap {
+    const map = new Map<string, string>();
+    for (const rename of this.renames) {
+      if (!map.has(rename.oldName)) {
+        map.set(rename.oldName, rename.newName);
+      }
     }
-    console.debug(`updated variable reference '${name}' to '${rename.newName}'`);
-    return rename.newName;
+    return map;
   }
   // Only a custom range holds expressions (limit/offset).
   private updateRange(range: Microflows.Range): void {

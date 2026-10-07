@@ -3,7 +3,7 @@ import { copyToAppPlugin, copyManifestPlugin, commonConfig } from "./build.helpe
 import parseArgs from "minimist";
 
 const outDir = `dist/BGS-UtilityTools`;
-const appDir = "C:\\Users\\ThomHopstaekn\\Mendix\\TestApp-main";
+const appDir = "C:\\Users\\ThomHopstaekn\\Mendix\\BGS - Tracks-Branch_TestExtension";
 const extensionDirectoryName = "extensions";
 
 const entryPoints = [

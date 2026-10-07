@@ -1,12 +1,14 @@
 import type {
   DomainModels,
   JavaActions,
+  JavaScriptActions,
   MLMappings,
   Microflows,
   Primitives,
   Rest,
   Workflows,
 } from "@mendix/extensions-api";
+import type { QualifiedNameRenames } from "../../framework/QualifiedNameRenames";
 import {
   type AssociationEnds,
   entityOfDataType,
@@ -33,8 +35,10 @@ export interface DomainModelLookup extends ResolveAccess {
 // Model APIs used to resolve documents that microflow actions reference by qualified name.
 export type ReferenceApis = {
   microflows: ResolveAccess;
+  nanoflows: ResolveAccess;
   domainModels: DomainModelLookup;
   javaActions: ResolveAccess;
+  javaScriptActions: ResolveAccess;
   workflows: ResolveAccess;
   consumedRestServices: ResolveAccess;
   mlMappingDocuments: ResolveAccess;
@@ -44,12 +48,15 @@ export type ReferenceApis = {
 export class ReferenceResolver {
   private readonly apis: ReferenceApis;
   private readonly cache: ReferenceCache;
+  // Flows renamed earlier in the job are resolved by their new name; callers still hold the old one.
+  private readonly renames: QualifiedNameRenames;
   // All associations by qualified name, loaded once when resolve() cannot find one.
   private associationFallback: Map<string, AssociationEnds> | null = null;
 
-  constructor(apis: ReferenceApis, cache: ReferenceCache) {
+  constructor(apis: ReferenceApis, cache: ReferenceCache, renames: QualifiedNameRenames) {
     this.apis = apis;
     this.cache = cache;
+    this.renames = renames;
   }
 
   async resolveAll(refs: FlowReferences): Promise<void> {
@@ -61,10 +68,20 @@ export class ReferenceResolver {
     }
     for (const qName of refs.microflows) {
       if (!cache.microflowReturnEntities.has(qName)) {
-        const called = await tryResolve(qName, () =>
-          this.apis.microflows.resolve<Microflows.Microflow>("Microflows$Microflow", qName),
+        const current = this.renames.current(qName);
+        const called = await tryResolve(current, () =>
+          this.apis.microflows.resolve<Microflows.Microflow>("Microflows$Microflow", current),
         );
         cache.microflowReturnEntities.set(qName, entityOfDataType(called?.microflowReturnType));
+      }
+    }
+    for (const qName of refs.nanoflows) {
+      if (!cache.nanoflowReturnEntities.has(qName)) {
+        const current = this.renames.current(qName);
+        const called = await tryResolve(current, () =>
+          this.apis.nanoflows.resolve<Microflows.Nanoflow>("Microflows$Nanoflow", current),
+        );
+        cache.nanoflowReturnEntities.set(qName, entityOfDataType(called?.microflowReturnType));
       }
     }
     for (const qName of refs.javaActions) {
@@ -73,6 +90,17 @@ export class ReferenceResolver {
           this.apis.javaActions.resolve<JavaActions.JavaAction>("JavaActions$JavaAction", qName),
         );
         cache.javaActions.set(qName, javaAction === null ? null : javaActionSignature(javaAction));
+      }
+    }
+    for (const qName of refs.javaScriptActions) {
+      if (!cache.javaScriptActions.has(qName)) {
+        const javaScriptAction = await tryResolve(qName, () =>
+          this.apis.javaScriptActions.resolve<JavaScriptActions.JavaScriptAction>(
+            "JavaScriptActions$JavaScriptAction",
+            qName,
+          ),
+        );
+        cache.javaScriptActions.set(qName, javaScriptAction === null ? null : javaActionSignature(javaScriptAction));
       }
     }
     for (const qName of refs.workflows) {
