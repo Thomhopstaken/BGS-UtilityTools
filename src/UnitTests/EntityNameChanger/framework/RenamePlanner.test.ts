@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { fakeContext, fakeUnitAccess, fakeUnitInfo, fakeUpdater } from "../helpers/fakes";
 import { chunk, planBatches } from "../../../EntityNameChanger/framework/RenamePlanner";
+import { UnitInfoCache } from "../../../EntityNameChanger/framework/UnitInfoCache";
 
 describe("chunk", () => {
   it("splits with a smaller last chunk", () => {
@@ -57,6 +58,15 @@ describe("planBatches", () => {
     });
     const batches = await planBatches([first, empty, last], context);
     expect(batches.map((b) => b.updater.label)).toEqual(["Microflows", "Pages"]);
+  });
+
+  it("lists units through the cache when given", async () => {
+    const access = fakeUnitAccess([], [fakeUnitInfo("a", "Microflows$Microflow")]);
+    const cache = new UnitInfoCache();
+    await planBatches([fakeUpdater(access)], context, 2, cache);
+    const batches = await planBatches([fakeUpdater(access)], context, 2, cache);
+    expect(batches.map((b) => b.infos.map((i) => i.$ID))).toEqual([["a"]]);
+    expect(access.getUnitsInfoCalls).toBe(1);
   });
 
   it("uses the default batch size of 25", async () => {

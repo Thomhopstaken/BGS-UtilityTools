@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DocumentRenamePlan } from "../../../EntityNameChanger/framework/DocumentRenamePlan";
+import { DocumentRenamePlan, qualifiedName } from "../../../EntityNameChanger/framework/DocumentRenamePlan";
 
 describe("DocumentRenamePlan", () => {
   it("returns the planned rename by unit id", () => {
@@ -12,5 +12,30 @@ describe("DocumentRenamePlan", () => {
 
   it("returns not renamed for an unplanned unit", () => {
     expect(new DocumentRenamePlan().get("missing")).toEqual({ renamedTo: null, skipped: 0 });
+  });
+
+  it("finds the unit id by original qualified name, renamed or not", () => {
+    const plan = new DocumentRenamePlan();
+    plan.set("u1", { renamedTo: "ACT_Purchase", skipped: 0 }, "M.ACT_Order");
+    plan.set("u2", { renamedTo: null, skipped: 0 }, "M.ACT_Customer");
+    plan.set("u3", { renamedTo: null, skipped: 0 });
+    expect(plan.unitIdOf("M.ACT_Order")).toBe("u1");
+    expect(plan.unitIdOf("M.ACT_Customer")).toBe("u2");
+    expect(plan.unitIdOf("M.ACT_Purchase")).toBeUndefined();
+  });
+
+  it("overwrites a plan and keeps the index", () => {
+    const plan = new DocumentRenamePlan();
+    plan.set("u1", { renamedTo: null, skipped: 0 }, "M.Order_Customer");
+    plan.set("u1", { renamedTo: "Purchase_Customer", skipped: 0 }, "M.Order_Customer");
+    expect(plan.get("u1").renamedTo).toBe("Purchase_Customer");
+    expect(plan.unitIdOf("M.Order_Customer")).toBe("u1");
+  });
+});
+
+describe("qualifiedName", () => {
+  it("joins module and name, undefined without module", () => {
+    expect(qualifiedName("M", "A")).toBe("M.A");
+    expect(qualifiedName(undefined, "A")).toBeUndefined();
   });
 });

@@ -1,5 +1,7 @@
 import type { DomainModels, Primitives } from "@mendix/extensions-api";
+import { applyAssociationRenames } from "../updaters/domainModels/associationRename";
 import { rewriteQualifiedNamesInUnit } from "../updaters/shared/qualifiedNameRewrite";
+import type { AssociationRenamePlan } from "./AssociationRenamePlan";
 import type { EntityStep } from "./RenameJob";
 import type { RenameContext } from "./RenameContext";
 import type { RenameReport } from "./RenameReport";
@@ -10,17 +12,20 @@ export interface DomainModelAccess {
   save<TElement extends Primitives.ElementBase>(element: TElement): Promise<void>;
 }
 
-// Renames the entity itself, after planning and before any document is changed, so every document saved later
-// references an existing entity. References to the entity inside its own domain model (access rules,
-// generalizations) are rewritten in the same save; the reference pass handles the rest of that domain model.
+// Renames the entity itself and the associations planned in its domain model, after planning and before any
+// document is changed, so every document saved later references existing names. References to the entity and
+// those associations inside its own domain model (access rules, generalizations) are rewritten in the same save;
+// the reference pass handles the rest of that domain model.
 export class EntityRenameStep implements EntityStep {
   readonly title = "Rename entity";
   private readonly domainModels: DomainModelAccess;
   private readonly context: RenameContext;
+  private readonly associationPlan: AssociationRenamePlan;
 
-  constructor(domainModels: DomainModelAccess, context: RenameContext) {
+  constructor(domainModels: DomainModelAccess, context: RenameContext, associationPlan: AssociationRenamePlan) {
     this.domainModels = domainModels;
     this.context = context;
+    this.associationPlan = associationPlan;
   }
 
   // Checks against a freshly loaded domain model; returns an error message, or null when the rename can go ahead.
@@ -52,13 +57,18 @@ export class EntityRenameStep implements EntityStep {
     }
     const entity = domainModel.entities.find((e) => e.$ID === this.context.entityId)!;
     entity.name = this.context.newName;
-    const entityOnly = new Map([[this.context.oldQualifiedName, this.context.newQualifiedName]]);
-    const references = rewriteQualifiedNamesInUnit(domainModel, entityOnly);
+    const associations = applyAssociationRenames(domainModel, this.associationPlan.get(this.context.domainModelId));
+    const ownRenames = new Map([[this.context.oldQualifiedName, this.context.newQualifiedName]]);
+    for (const association of associations) {
+      ownRenames.set(`${this.context.moduleName}.${association.oldName}`, `${this.context.moduleName}.${association.newName}`);
+    }
+    const references = rewriteQualifiedNamesInUnit(domainModel, ownRenames);
     await this.domainModels.save(domainModel);
     report.updatedReferences += references;
+    report.renamedAssociations += associations.length;
     report.entityRenamed = true;
     console.info(
-      `renamed entity ${this.context.oldQualifiedName} to ${this.context.newName}, ${references} references in its domain model updated`,
+      `renamed entity ${this.context.oldQualifiedName} to ${this.context.newName} and ${associations.length} associations, ${references} references in its domain model updated`,
     );
     return true;
   }

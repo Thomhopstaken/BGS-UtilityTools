@@ -105,6 +105,10 @@ export function showReport(dialog: Mx.ProgressDialogResult, report: RenameReport
   for (const line of report.summary()) {
     showStatus(line, line.startsWith("Failed") ? "error" : "info");
   }
+  for (const line of report.navigationWarnings()) {
+    console.info(line);
+    showStatus(line, "warning");
+  }
 }
 
 export function showStatus(message: string, type: string): void {

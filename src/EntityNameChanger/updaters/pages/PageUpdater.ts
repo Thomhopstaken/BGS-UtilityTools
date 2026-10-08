@@ -1,6 +1,6 @@
 import type { Primitives } from "@mendix/extensions-api";
 import type { DocumentNameRegistry } from "../../framework/DocumentNameRegistry";
-import type { DocumentRenamePlan } from "../../framework/DocumentRenamePlan";
+import { type DocumentRenamePlan, qualifiedName } from "../../framework/DocumentRenamePlan";
 import type { QualifiedNameRenames } from "../../framework/QualifiedNameRenames";
 import { UNCHANGED, type UnitAccess, type UnitUpdater, type UnitUpdateResult, type UpdaterMode } from "../../framework/types";
 import { planDocumentRename } from "../shared/renameDocument";
@@ -70,7 +70,7 @@ export class PageUpdater<TUnit extends PageDocument> implements UnitUpdater<TUni
       this.deps.documentNames,
       helper.shouldRenameDocument(doc),
     );
-    this.deps.plan.set(info.$ID, document);
+    this.deps.plan.set(info.$ID, document, qualifiedName(info.moduleName, doc.name));
     this.recordRenames(info, doc.name, document.renamedTo);
     console.info(
       `planned ${this.kind} ${info.moduleName}.${doc.name}: renamedTo=${document.renamedTo}, ${helper.renames.size} parameter renames`,
@@ -99,6 +99,7 @@ export class PageUpdater<TUnit extends PageDocument> implements UnitUpdater<TUni
       renamedVariables: helper.renames.size,
       updatedReferences: 0,
       skippedRenames: helper.skippedRenames + document.skipped,
+      renamedAssociations: 0,
     };
     console.info(
       `${info.moduleName}.${oldName}: changed=${result.changed}, ${result.renamedVariables} renames, ${usages} usages, ${result.skippedRenames} skipped`,

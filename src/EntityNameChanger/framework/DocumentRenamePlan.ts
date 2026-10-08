@@ -1,11 +1,21 @@
 import { type DocumentRename, NOT_RENAMED } from "../updaters/shared/renameDocument";
 
+// "Module.Name", or undefined when the unit has no module.
+export function qualifiedName(moduleName: string | undefined, name: string): string | undefined {
+  return moduleName === undefined ? undefined : `${moduleName}.${name}`;
+}
+
 // Document renames decided in the planning phase, by unit id; applied in the write phase.
 export class DocumentRenamePlan {
   private readonly renames = new Map<string, DocumentRename>();
+  // Original qualified name -> unit id of every planned document, renamed or not.
+  private readonly unitIds = new Map<string, string>();
 
-  set(unitId: string, rename: DocumentRename): void {
+  set(unitId: string, rename: DocumentRename, qname?: string): void {
     this.renames.set(unitId, rename);
+    if (qname !== undefined) {
+      this.unitIds.set(qname, unitId);
+    }
   }
 
   // Not planned (e.g. the unit was not seen in planning): not renamed.
@@ -16,5 +26,10 @@ export class DocumentRenamePlan {
       return { ...NOT_RENAMED };
     }
     return rename;
+  }
+
+  // Unit id of a planned document by its original qualified name; undefined for documents we don't plan.
+  unitIdOf(qname: string): string | undefined {
+    return this.unitIds.get(qname);
   }
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isReservedName, RESERVED_NAMES, validateNewName } from "../../EntityNameChanger/validation";
+import { findTakenEntityName, isReservedName, RESERVED_NAMES, validateNewName } from "../../EntityNameChanger/validation";
 
 const order = { name: "Order" };
 
@@ -44,5 +44,16 @@ describe("isReservedName", () => {
 
   it.each(["whiles", "Mendix", ""])("does not match '%s'", (name) => {
     expect(isReservedName(name)).toBe(false);
+  });
+});
+
+describe("findTakenEntityName", () => {
+  it("reports a name used by an entity in the same domain model", () => {
+    expect(findTakenEntityName(["Order", "Purchase"], "MyModule", "Purchase")).toBe("An entity named MyModule.Purchase already exists.");
+  });
+
+  it("accepts a free name, including one differing only in case", () => {
+    expect(findTakenEntityName(["Order", "purchase"], "MyModule", "Purchase")).toBeNull();
+    expect(findTakenEntityName([], "MyModule", "Purchase")).toBeNull();
   });
 });

@@ -72,7 +72,7 @@ describe("FlowUpdater plan", () => {
     const create = action("CreateObjectAction", { entity: QNAME, outputVariableName: "NewOrder", items: [] });
     const flow = microflow({ name: "ACT_Order", objects: [param, activity(create)] });
     const before = JSON.stringify(flow);
-    expect(await planner.update(flow, info(flow.name))).toEqual({ changed: false, renamedTo: null, renamedVariables: 0, updatedReferences: 0, skippedRenames: 0 });
+    expect(await planner.update(flow, info(flow.name))).toEqual({ changed: false, renamedTo: null, renamedVariables: 0, updatedReferences: 0, skippedRenames: 0, renamedAssociations: 0 });
     expect(JSON.stringify(flow)).toBe(before);
   });
 
@@ -117,7 +117,7 @@ describe("FlowUpdater rename", () => {
   it("reports an unrelated flow as unchanged", async () => {
     const { run } = setup();
     const flow = microflow({ name: "ACT_Customer", objects: [parameter("Customer", stringType())] });
-    expect(await run(flow, info(flow.name))).toEqual({ changed: false, renamedTo: null, renamedVariables: 0, updatedReferences: 0, skippedRenames: 0 });
+    expect(await run(flow, info(flow.name))).toEqual({ changed: false, renamedTo: null, renamedVariables: 0, updatedReferences: 0, skippedRenames: 0, renamedAssociations: 0 });
   });
 
   it("renames variables and their usages and leaves entity references to the reference pass", async () => {
@@ -126,7 +126,7 @@ describe("FlowUpdater rename", () => {
     const param = parameter("Order", objectType(QNAME));
     const flow = microflow({ name: "ACT_Process", objects: [param, activity(commit)] });
     const result = await run(flow, info(flow.name));
-    expect(result).toEqual({ changed: true, renamedTo: null, renamedVariables: 1, updatedReferences: 0, skippedRenames: 0 });
+    expect(result).toEqual({ changed: true, renamedTo: null, renamedVariables: 1, updatedReferences: 0, skippedRenames: 0, renamedAssociations: 0 });
     expect(commit.commitVariableName).toBe("Purchase");
     expect((param as Microflows.MicroflowParameterObject).variableType).toMatchObject({ entity: QNAME });
   });
@@ -167,7 +167,7 @@ describe("FlowUpdater rename", () => {
     const { run } = setup(["ACT_Order", "ACT_Purchase"]);
     const flow = microflow({ name: "ACT_Order", returnType: objectType(QNAME), returnVariableName: "Customer" });
     const result = await run(flow, info(flow.name));
-    expect(result).toEqual({ changed: false, renamedTo: null, renamedVariables: 0, updatedReferences: 0, skippedRenames: 1 });
+    expect(result).toEqual({ changed: false, renamedTo: null, renamedVariables: 0, updatedReferences: 0, skippedRenames: 1, renamedAssociations: 0 });
     expect(flow.name).toBe("ACT_Order");
   });
 

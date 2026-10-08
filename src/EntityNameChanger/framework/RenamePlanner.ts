@@ -1,6 +1,7 @@
 import type { Primitives } from "@mendix/extensions-api";
 import { isInScope, type RenameContext } from "./RenameContext";
 import type { UnitUpdater } from "./types";
+import type { UnitInfoCache } from "./UnitInfoCache";
 
 // Units loaded per progress step; each batch is dropped after saving so memory stays bounded.
 // Set to 1 to load every unit fresh after the previous one was saved.
@@ -27,10 +28,12 @@ export function chunk<T>(items: readonly T[], size: number): T[][] {
 }
 
 // Uses only unit metadata, so planning loads no documents. Stubs are skipped entirely.
+// With a cache, getUnitsInfo() is called once per model API.
 export async function planBatches(
   updaters: readonly UnitUpdater[],
   context: RenameContext,
   batchSize: number = BATCH_SIZE,
+  unitInfos?: UnitInfoCache,
 ): Promise<PlannedBatch[]> {
   const batches: PlannedBatch[] = [];
   for (const updater of updaters) {
@@ -38,7 +41,8 @@ export async function planBatches(
       console.info(`${updater.label}: not implemented yet, skipped`);
       continue;
     }
-    const infos = (await updater.access.getUnitsInfo()).filter(
+    const all = await (unitInfos === undefined ? updater.access.getUnitsInfo() : unitInfos.get(updater.access));
+    const infos = all.filter(
       (info) => info.$Type === updater.unitType && isInScope(info, context),
     );
     console.info(`${updater.label}: ${infos.length} units in scope, batch size ${batchSize}`);

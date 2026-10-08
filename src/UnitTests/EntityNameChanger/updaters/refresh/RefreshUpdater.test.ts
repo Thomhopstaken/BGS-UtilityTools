@@ -64,6 +64,7 @@ describe("RefreshUpdater", () => {
       renamedVariables: 0,
       updatedReferences: 0,
       skippedRenames: 0,
+      renamedAssociations: 0,
     });
     expect(savedDocs).toEqual([" "]);
     expect(unit.documentation).toBe("");

@@ -54,7 +54,7 @@ describe("PageUpdater plan", () => {
     const { planner } = setup("Pages$Page", ["Order_Edit"]);
     const doc = page({ name: "Order_Edit", parameters: [pageParameter("Order", objectType(QNAME))] });
     const before = JSON.stringify(doc);
-    expect(await planner.update(doc, info(doc.name))).toEqual({ changed: false, renamedTo: null, renamedVariables: 0, updatedReferences: 0, skippedRenames: 0 });
+    expect(await planner.update(doc, info(doc.name))).toEqual({ changed: false, renamedTo: null, renamedVariables: 0, updatedReferences: 0, skippedRenames: 0, renamedAssociations: 0 });
     expect(JSON.stringify(doc)).toBe(before);
   });
 
@@ -90,7 +90,7 @@ describe("PageUpdater rename", () => {
   it("reports an unrelated page as unchanged", async () => {
     const { run } = setup("Pages$Page");
     const doc = page({ name: "Customer_Edit", parameters: [pageParameter("Customer", stringType())] });
-    expect(await run(doc, info(doc.name))).toEqual({ changed: false, renamedTo: null, renamedVariables: 0, updatedReferences: 0, skippedRenames: 0 });
+    expect(await run(doc, info(doc.name))).toEqual({ changed: false, renamedTo: null, renamedVariables: 0, updatedReferences: 0, skippedRenames: 0, renamedAssociations: 0 });
   });
 
   it("renames parameters, usages and the page, and leaves entity references to the reference pass", async () => {
@@ -98,7 +98,7 @@ describe("PageUpdater rename", () => {
     const template = element("Pages$ClientTemplateParameter", { expression: "$Order/Name" });
     const doc = page({ name: "Order_Edit", parameters: [pageParameter("Order", objectType(QNAME))], widgets: [widget("Pages$Text", "t", { template })] });
     const result = await run(doc, info(doc.name));
-    expect(result).toEqual({ changed: true, renamedTo: "Purchase_Edit", renamedVariables: 1, updatedReferences: 0, skippedRenames: 0 });
+    expect(result).toEqual({ changed: true, renamedTo: "Purchase_Edit", renamedVariables: 1, updatedReferences: 0, skippedRenames: 0, renamedAssociations: 0 });
     expect(doc.parameters[0].name).toBe("Purchase");
     expect(doc.parameters[0].parameterType).toMatchObject({ entity: QNAME });
     expect(template.expression).toBe("$Purchase/Name");
@@ -120,7 +120,7 @@ describe("PageUpdater rename", () => {
     const entityRef = element("DomainModels$DirectEntityRef", { entity: QNAME });
     const doc = page({ name: "Order_Overview", widgets: [widget("Pages$DataGrid", "grid", { dataSource: element("Pages$GridXPathSource", { entityRef }) })] });
     const result = await run(doc, info(doc.name));
-    expect(result).toEqual({ changed: true, renamedTo: "Purchase_Overview", renamedVariables: 0, updatedReferences: 0, skippedRenames: 0 });
+    expect(result).toEqual({ changed: true, renamedTo: "Purchase_Overview", renamedVariables: 0, updatedReferences: 0, skippedRenames: 0, renamedAssociations: 0 });
     expect(entityRef.entity).toBe(QNAME);
   });
 
@@ -151,7 +151,7 @@ describe("PageUpdater rename", () => {
     const { run } = setup("Pages$Page", ["Order_Edit", "Purchase_Edit"]);
     const doc = page({ name: "Order_Edit", parameters: [pageParameter("Order", objectType(QNAME)), pageParameter("Purchase", stringType())] });
     const result = await run(doc, info(doc.name));
-    expect(result).toEqual({ changed: false, renamedTo: null, renamedVariables: 0, updatedReferences: 0, skippedRenames: 2 });
+    expect(result).toEqual({ changed: false, renamedTo: null, renamedVariables: 0, updatedReferences: 0, skippedRenames: 2, renamedAssociations: 0 });
     expect(doc.name).toBe("Order_Edit");
   });
 

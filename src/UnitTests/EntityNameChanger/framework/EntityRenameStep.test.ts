@@ -3,11 +3,12 @@ import { describe, expect, it } from "vitest";
 import { fakeContext, fakeUnitInfo } from "../helpers/fakes";
 import { type DomainModelAccess, EntityRenameStep, findEntityProblem } from "../../../EntityNameChanger/framework/EntityRenameStep";
 import { RenameReport } from "../../../EntityNameChanger/framework/RenameReport";
+import { AssociationRenamePlan } from "../../../EntityNameChanger/framework/AssociationRenamePlan";
 
 const context = fakeContext();
 
-function step(access: DomainModelAccess): EntityRenameStep {
-  return new EntityRenameStep(access, context);
+function step(access: DomainModelAccess, associationPlan = new AssociationRenamePlan()): EntityRenameStep {
+  return new EntityRenameStep(access, context, associationPlan);
 }
 
 function domainModel(entities: { $ID: string; name: string }[]): DomainModels.DomainModel {
@@ -94,6 +95,37 @@ describe("EntityRenameStep", () => {
     expect(handler.microflow).toBe("MyModule.ACR_Order");
     expect(access.saved).toEqual([model]);
     expect(report.updatedReferences).toBe(2);
+  });
+
+  it("run renames the planned associations of its domain model in the same save", async () => {
+    const entity = { $Type: "DomainModels$Entity", $ID: "entity-1", name: "Order" };
+    const own = { $Type: "DomainModels$Association", $ID: "a1", name: "Order_Customer", parent: "MyModule.Order", child: "MyModule.Customer" };
+    const cross = { $Type: "DomainModels$CrossAssociation", $ID: "a2", name: "Order_Invoice", parent: "MyModule.Order", child: "Other.Invoice" };
+    const untouched = { $Type: "DomainModels$Association", $ID: "a3", name: "Customer_Address", parent: "MyModule.Customer", child: "MyModule.Address" };
+    const memberAccess = { $Type: "DomainModels$MemberAccess", association: "MyModule.Order_Customer" };
+    const crossAccess = { $Type: "DomainModels$MemberAccess", association: "MyModule.Order_Invoice" };
+    const model = {
+      $Type: "DomainModels$DomainModel",
+      $ID: "dm-1",
+      entities: [entity],
+      associations: [own, untouched],
+      crossAssociations: [cross],
+      memberAccess,
+      crossAccess,
+    } as unknown as DomainModels.DomainModel;
+    const plan = new AssociationRenamePlan();
+    plan.set("dm-1", "a1", "Purchase_Customer");
+    plan.set("dm-1", "a2", "Purchase_Invoice");
+    plan.set("dm-2", "x", "Elsewhere");
+    const access = fakeDomainModels(model);
+    const report = new RenameReport();
+    expect(await step(access, plan).run(report)).toBe(true);
+    expect([own.name, cross.name, untouched.name]).toEqual(["Purchase_Customer", "Purchase_Invoice", "Customer_Address"]);
+    expect(own.parent).toBe("MyModule.Purchase");
+    expect(memberAccess.association).toBe("MyModule.Purchase_Customer");
+    expect(crossAccess.association).toBe("MyModule.Purchase_Invoice");
+    expect(access.saved).toEqual([model]);
+    expect(report.renamedAssociations).toBe(2);
   });
 
   it("run stops the job without loading or saving when planning failed", async () => {

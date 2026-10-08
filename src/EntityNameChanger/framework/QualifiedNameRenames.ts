@@ -37,6 +37,34 @@ export class QualifiedNameRenames {
     this.add(`${moduleName}.${oldDocument}.${oldName}`, `${moduleName}.${newDocument}.${newName}`);
   }
 
+  addAssociation(moduleName: string, oldName: string, newName: string): void {
+    this.add(`${moduleName}.${oldName}`, `${moduleName}.${newName}`);
+  }
+
+  remove(oldQname: string): void {
+    if (this.renames.delete(oldQname)) {
+      console.debug(`qualified name rename removed: ${oldQname}`);
+    }
+  }
+
+  // Points the parameter renames of document `document` (keys Module.document.*) from `fromDocument` to
+  // `toDocument`, after a document rename was added or revoked late in planning.
+  retargetDocument(moduleName: string, document: string, fromDocument: string, toDocument: string): void {
+    const keyPrefix = `${moduleName}.${document}.`;
+    const fromPrefix = `${moduleName}.${fromDocument}.`;
+    for (const [oldQname, newQname] of [...this.renames]) {
+      if (oldQname.startsWith(keyPrefix) && newQname.startsWith(fromPrefix)) {
+        const retargeted = `${moduleName}.${toDocument}.${newQname.slice(fromPrefix.length)}`;
+        console.debug(`qualified name rename retargeted: ${oldQname} -> ${retargeted}`);
+        if (oldQname === retargeted) {
+          this.renames.delete(oldQname);
+        } else {
+          this.renames.set(oldQname, retargeted);
+        }
+      }
+    }
+  }
+
   // The current name of a document that may have been renamed earlier in the job.
   current(qname: string): string {
     return this.renames.get(qname) ?? qname;

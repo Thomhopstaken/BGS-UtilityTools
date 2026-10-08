@@ -15,15 +15,27 @@ export type UnitFailure = {
   error: string;
 };
 
+export type DocumentRenameOutcome = {
+  unitType: string;
+  oldQualifiedName: string;
+  newQualifiedName: string;
+};
+
+// Document types navigation can reference (menu items, home pages, login page).
+// Navigation is not in the extensions API, so these are reported for a manual check.
+export const NAVIGATION_UNIT_TYPES: ReadonlySet<string> = new Set(["Pages$Page", "Microflows$Microflow", "Microflows$Nanoflow"]);
+
 // Collects what happened per unit during a job.
 export class RenameReport {
   readonly changed: UnitOutcome[] = [];
   readonly failures: UnitFailure[] = [];
+  readonly renamedDocuments: DocumentRenameOutcome[] = [];
   // Unit ids; a unit is visited by a rename and a reference updater, so it is counted once.
   private readonly checkedIds = new Set<string>();
   private readonly changedIds = new Set<string>();
   skippedRenames = 0;
   updatedReferences = 0;
+  renamedAssociations = 0;
   entityRenamed = false;
   entitySkipReason: string | null = null;
   // Set when the job stopped after the entity was renamed.
@@ -49,9 +61,18 @@ export class RenameReport {
     this.checkedIds.add(info.$ID);
     this.skippedRenames += result.skippedRenames;
     this.updatedReferences += result.updatedReferences;
+    this.renamedAssociations += result.renamedAssociations;
     if (result.changed) {
       this.changedIds.add(info.$ID);
       this.changed.push({ label, unitId: info.$ID, name: info.name ?? info.$ID, result });
+    }
+    if (result.renamedTo !== null && info.name !== undefined) {
+      const module = info.moduleName === undefined ? "" : `${info.moduleName}.`;
+      this.renamedDocuments.push({
+        unitType: info.$Type,
+        oldQualifiedName: `${module}${info.name}`,
+        newQualifiedName: `${module}${result.renamedTo}`,
+      });
     }
   }
 
@@ -78,11 +99,14 @@ export class RenameReport {
     if (renamedDocuments.length > 0) {
       lines.push(`Renamed ${renamedDocuments.length} documents.`);
     }
+    if (this.renamedAssociations > 0) {
+      lines.push(`Renamed ${this.renamedAssociations} associations.`);
+    }
     if (this.updatedReferences > 0) {
-      lines.push(`Updated ${this.updatedReferences} references to the renamed entity, documents and parameters.`);
+      lines.push(`Updated ${this.updatedReferences} references to the renamed entity, documents, parameters and associations.`);
     }
     if (this.skippedRenames > 0) {
-      lines.push(`Skipped ${this.skippedRenames} renames because the new name is already in use.`);
+      lines.push(`Skipped ${this.skippedRenames} renames because the new name is already in use (see the log).`);
     }
     for (const failure of this.failures) {
       lines.push(`Failed: ${failure.label} ${failure.name}: ${failure.error}`);
@@ -94,5 +118,19 @@ export class RenameReport {
       lines.push(`Not finished: ${this.incompleteReason}`);
     }
     return lines;
+  }
+
+  // Manual-check lines for renamed documents navigation may reference; empty when none were renamed.
+  navigationWarnings(): string[] {
+    const renamed = this.renamedDocuments.filter((d) => NAVIGATION_UNIT_TYPES.has(d.unitType));
+    if (renamed.length === 0) {
+      console.debug("navigation warning: no renamed pages, microflows or nanoflows");
+      return [];
+    }
+    console.info(`navigation warning: ${renamed.length} renamed documents to check manually`);
+    return [
+      "Navigation can't be updated by this extension. Check App > Navigation (menu items, home pages, role-based home pages, login page) for these renamed documents:",
+      ...renamed.map((d) => `${d.oldQualifiedName} -> ${d.newQualifiedName}`),
+    ];
   }
 }

@@ -25,6 +25,13 @@ describe("DocumentNameRegistry", () => {
     expect(registry.isFree("MyModule", "Kept")).toBe(false);
   });
 
+  it("loads a modules tree into an existing registry", () => {
+    const registry = new DocumentNameRegistry();
+    registry.load([{ name: "MyModule", documents: [{ name: "ACT_Order" }] }]);
+    expect(registry.isFree("MyModule", "ACT_Order")).toBe(false);
+    expect(registry.existedAtStart("MyModule", "ACT_Order")).toBe(true);
+  });
+
   it("treats unknown modules as free", () => {
     expect(new DocumentNameRegistry().isFree("Nope", "Anything")).toBe(true);
   });
@@ -36,6 +43,23 @@ describe("DocumentNameRegistry", () => {
     expect(registry.isFree("MyModule", "ACT_Order")).toBe(true);
     expect(registry.isFree("MyModule", "ACT_Purchase")).toBe(false);
     expect(registry.size).toBe(1);
+  });
+
+  it("remembers the names that existed at the start", () => {
+    const registry = DocumentNameRegistry.fromModulesTree([{ name: "MyModule", documents: [{ name: "Order_Customer" }] }]);
+    registry.register("MyModule", "Order_Customer", "Purchase_Customer");
+    expect(registry.existedAtStart("MyModule", "Order_Customer")).toBe(true);
+    expect(registry.existedAtStart("MyModule", "Purchase_Customer")).toBe(false);
+    expect(registry.existedAtStart("Nope", "Order_Customer")).toBe(false);
+  });
+
+  it("reverts a rename by registering it back", () => {
+    const registry = new DocumentNameRegistry();
+    registry.add("MyModule", "Order_Customer");
+    registry.register("MyModule", "Order_Customer", "Purchase_Customer");
+    registry.register("MyModule", "Purchase_Customer", "Order_Customer");
+    expect(registry.isFree("MyModule", "Order_Customer")).toBe(false);
+    expect(registry.isFree("MyModule", "Purchase_Customer")).toBe(true);
   });
 
   it("register works for a module not seen before", () => {

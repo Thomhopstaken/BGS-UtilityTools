@@ -3,19 +3,26 @@ import { BATCH_SIZE, type PlannedBatch, planBatches } from "./RenamePlanner";
 import type { RenameContext } from "./RenameContext";
 import { RenameReport } from "./RenameReport";
 import type { ProgressRunner, UnitUpdater } from "./types";
+import { UnitInfoCache } from "./UnitInfoCache";
 
-// Renames the entity; runs after planning and before any document is changed.
+// A single step outside the updaters: preparing, or renaming the entity.
 export interface EntityStep {
   readonly title: string;
   run(report: RenameReport): Promise<true | string>;
 }
 
-export type RenameJobDeps = {
+export type JobSteps = {
+  // First step: validation and loading what the updaters need; changes nothing.
+  prepare: EntityStep;
   // Read-only; decide every rename before anything is changed.
   planners: readonly UnitUpdater[];
+  // Renames the entity; runs after planning and before any document is changed.
   entityStep: EntityStep;
   // Run after the entity rename, in order: declarations (documents, parameters, variables), references, refresh.
   updaters: readonly UnitUpdater[];
+};
+
+export type RenameJobDeps = JobSteps & {
   runProgress: ProgressRunner;
   batchSize?: number;
 };
@@ -25,15 +32,13 @@ export type RenameJobResult = {
   report: RenameReport;
 };
 
-// Plans the batches, then runs them in the modal progress dialog, which blocks Studio Pro until done.
-// Order: plan (read-only) -> rename entity -> rename declarations -> update references. Every document gets its
-// last save after all names it references exist, because Studio Pro checks a document only when it is saved.
+// Runs the job in the modal progress dialog, which blocks Studio Pro until done. Opens the dialog without any model
+// API call; each step lists and loads its own units.
+// Order: prepare -> plan (read-only) -> rename entity -> rename declarations -> update references. Every document gets
+// its last save after all names it references exist, because Studio Pro checks a document only when it is saved.
 export async function runRenameJob(deps: RenameJobDeps, context: RenameContext): Promise<RenameJobResult> {
   const report = new RenameReport();
-  const batchSize = deps.batchSize ?? BATCH_SIZE;
-  const planBatchList = await planBatches(deps.planners, context, batchSize);
-  const updateBatchList = await planBatches(deps.updaters, context, batchSize);
-  const steps = buildSteps(planBatchList, deps.entityStep, updateBatchList, report, context);
+  const steps = buildSteps(deps, report, context, deps.batchSize ?? BATCH_SIZE, new UnitInfoCache());
   console.info(`starting rename job with ${steps.length} steps`);
   const dialog = await deps.runProgress(`Renaming ${context.oldQualifiedName} to ${context.newName}`, steps);
   console.info(`rename job ended: ${dialog.result}${dialog.failedStep ? ` (${dialog.failedStep.stepTitle}: ${dialog.failedStep.error})` : ""}`);
@@ -53,44 +58,55 @@ export function unitDisplayName(info: Readonly<Primitives.UnitInfo>): string {
   return info.moduleName === undefined ? name : `${info.moduleName}.${name}`;
 }
 
-// One step per updater (e.g. "Planning microflows", "Updating microflows") that runs all its batches; the entity
-// step sits between the planners and the updaters.
+// Prepare, one step per implemented planner (e.g. "Planning microflows"), the entity step, then one step per
+// implemented updater. Stubs get no step. The units of a step are listed when the step runs.
 export function buildSteps(
-  planBatchList: readonly PlannedBatch[],
-  entityStep: EntityStep,
-  updateBatchList: readonly PlannedBatch[],
+  job: JobSteps,
   report: RenameReport,
   context: RenameContext,
+  batchSize: number = BATCH_SIZE,
+  unitInfos: UnitInfoCache = new UnitInfoCache(),
 ): ProgressDialogStep[] {
-  const stepsFor = (batches: readonly PlannedBatch[]): ProgressDialogStep[] =>
-    [...groupByUpdater(batches)].map(([updater, group]) => ({
-      title: updater.title ?? `Updating ${updater.label.toLowerCase()}`,
-      description: `${updater.description} (${context.oldName} -> ${context.newName}), ${group[0].total} documents`,
-      action: () => runBatches(group, report),
-    }));
+  const single = (step: EntityStep, description: string): ProgressDialogStep => ({
+    title: step.title,
+    description,
+    action: () => step.run(report),
+  });
+  const perUpdater = (updaters: readonly UnitUpdater[]): ProgressDialogStep[] =>
+    updaters
+      .filter((updater) => updater.implemented)
+      .map((updater) => ({
+        title: updater.title ?? `Updating ${updater.label.toLowerCase()}`,
+        description: `${updater.description} (${context.oldName} -> ${context.newName})`,
+        action: () => runUpdater(updater, report, context, batchSize, unitInfos),
+      }));
   return [
-    ...stepsFor(planBatchList),
-    {
-      title: entityStep.title,
-      description: `${context.oldQualifiedName} -> ${context.newName}`,
-      action: () => entityStep.run(report),
-    },
-    ...stepsFor(updateBatchList),
+    single(job.prepare, `Checking ${context.oldQualifiedName} and loading document names`),
+    ...perUpdater(job.planners),
+    single(job.entityStep, `${context.oldQualifiedName} -> ${context.newName}`),
+    ...perUpdater(job.updaters),
   ];
 }
 
-// Keeps planner order; a Map iterates in insertion order.
-export function groupByUpdater(batches: readonly PlannedBatch[]): Map<UnitUpdater, PlannedBatch[]> {
-  const groups = new Map<UnitUpdater, PlannedBatch[]>();
-  for (const batch of batches) {
-    const group = groups.get(batch.updater);
-    if (group === undefined) {
-      groups.set(batch.updater, [batch]);
-    } else {
-      group.push(batch);
-    }
+// Lists the units of one updater in batches, then runs them; a listing failure stops the job.
+export async function runUpdater(
+  updater: UnitUpdater,
+  report: RenameReport,
+  context: RenameContext,
+  batchSize: number,
+  unitInfos: UnitInfoCache,
+): Promise<true | string> {
+  const started = Date.now();
+  let batches: PlannedBatch[];
+  try {
+    batches = await planBatches([updater], context, batchSize, unitInfos);
+  } catch (error: unknown) {
+    console.info(`${updater.label}: could not list units: ${error}`);
+    return `Could not list ${updater.label.toLowerCase()}: ${error}`;
   }
-  return groups;
+  const outcome = await runBatches(batches, report);
+  console.info(`${updater.label}: ${batches.length} batches done in ${Date.now() - started} ms`);
+  return outcome;
 }
 
 // Runs batches in order; stops at the first batch that cannot load.

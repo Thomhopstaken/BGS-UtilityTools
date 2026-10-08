@@ -39,6 +39,42 @@ describe("QualifiedNameRenames", () => {
     expect([...QualifiedNameRenames.forEntity(fakeContext()).map]).toEqual([["MyModule.Order", "MyModule.Purchase"]]);
   });
 
+  it("adds and removes association renames", () => {
+    const renames = new QualifiedNameRenames();
+    renames.addAssociation("M", "Order_Customer", "Purchase_Customer");
+    expect(renames.map.get("M.Order_Customer")).toBe("M.Purchase_Customer");
+    renames.remove("M.Order_Customer");
+    renames.remove("M.Missing");
+    expect(renames.size).toBe(0);
+  });
+
+  it("retargets parameter renames to a document rename added late", () => {
+    const renames = new QualifiedNameRenames();
+    renames.addParameter("M", "Order_Customer", "Order_Customer", "OrderList", "PurchaseList");
+    renames.addParameter("M", "Other", "Other", "OrderList", "PurchaseList");
+    renames.retargetDocument("M", "Order_Customer", "Order_Customer", "Purchase_Customer");
+    expect([...renames.map]).toEqual([
+      ["M.Order_Customer.OrderList", "M.Purchase_Customer.PurchaseList"],
+      ["M.Other.OrderList", "M.Other.PurchaseList"],
+    ]);
+  });
+
+  it("retargets parameter renames back when a document rename is revoked", () => {
+    const renames = new QualifiedNameRenames();
+    renames.addDocument("M", "Order_Customer", "Purchase_Customer");
+    renames.addParameter("M", "Order_Customer", "Purchase_Customer", "OrderList", "PurchaseList");
+    renames.remove("M.Order_Customer");
+    renames.retargetDocument("M", "Order_Customer", "Purchase_Customer", "Order_Customer");
+    expect([...renames.map]).toEqual([["M.Order_Customer.OrderList", "M.Order_Customer.PurchaseList"]]);
+  });
+
+  it("drops a parameter rename that becomes a no-op after retargeting", () => {
+    const renames = new QualifiedNameRenames();
+    renames.add("M.Doc.P", "M.Other.P");
+    renames.retargetDocument("M", "Doc", "Other", "Doc");
+    expect(renames.size).toBe(0);
+  });
+
   it("returns the current name of a renamed document, other names unchanged", () => {
     const renames = new QualifiedNameRenames();
     renames.addDocument("M", "ACT_Order", "ACT_Purchase");

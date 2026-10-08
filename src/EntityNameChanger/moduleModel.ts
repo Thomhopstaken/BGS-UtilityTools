@@ -46,6 +46,13 @@ export function getEntityLocation(
   return { domainModelId, moduleName };
 }
 
+// Names of the entities in one domain model, from the pane's loaded entities (no API call).
+export function getEntityNamesInDomainModel(entities: readonly Mx.DomainModels.Entity[], domainModelId: string): string[] {
+  const names = entities.filter((e) => Mx.getContainer<Mx.DomainModels.DomainModel>(e)?.$ID === domainModelId).map((e) => e.name);
+  console.debug(`domain model ${domainModelId}: ${names.length} entities loaded in the pane`);
+  return names;
+}
+
 export function setQualifiedName(element: any, domainModels: UnitInfos): string {
   const dmID = Mx.getContainer<Mx.DomainModels.DomainModel>(element)?.$ID;
   const domainName = domainModels.find((i) => i.$ID === dmID)?.moduleName;

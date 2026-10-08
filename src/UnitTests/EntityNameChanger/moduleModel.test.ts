@@ -1,6 +1,6 @@
 import type * as Mx from "@mendix/extensions-api";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { getAppstoreModuleNames, getEntities, getEntityLocation, setQualifiedName } from "../../EntityNameChanger/moduleModel";
+import { getAppstoreModuleNames, getEntities, getEntityLocation, getEntityNamesInDomainModel, setQualifiedName } from "../../EntityNameChanger/moduleModel";
 import { fakeUnitInfo } from "./helpers/fakes";
 
 // The real package needs Studio Pro at runtime; only getContainer is used.
@@ -69,5 +69,17 @@ describe("getEntities", () => {
     expect(filter({ moduleName: "Atlas_Core" } as Mx.Primitives.UnitInfo)).toBe(false);
     expect(filter({ moduleName: "System" } as Mx.Primitives.UnitInfo)).toBe(false);
     expect(filter({} as Mx.Primitives.UnitInfo)).toBe(false);
+  });
+});
+
+describe("getEntityNamesInDomainModel", () => {
+  it("returns the names of the entities in the given domain model", () => {
+    getContainer.mockImplementation((e: { name: string }) => ({ $ID: e.name === "Invoice" ? "dm-2" : "dm-1" }));
+    expect(getEntityNamesInDomainModel([entity("Order"), entity("Invoice"), entity("Customer")], "dm-1")).toEqual(["Order", "Customer"]);
+  });
+
+  it("skips entities without a container", () => {
+    getContainer.mockReturnValue(undefined);
+    expect(getEntityNamesInDomainModel([entity("Order")], "dm-1")).toEqual([]);
   });
 });

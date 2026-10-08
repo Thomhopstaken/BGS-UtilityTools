@@ -1,8 +1,10 @@
 import type { Primitives } from "@mendix/extensions-api";
 import { describe, expect, it } from "vitest";
+import { AssociationRenamePlan } from "../../../EntityNameChanger/framework/AssociationRenamePlan";
 import { DocumentNameRegistry } from "../../../EntityNameChanger/framework/DocumentNameRegistry";
 import { QualifiedNameRenames } from "../../../EntityNameChanger/framework/QualifiedNameRenames";
 import { fakeContext, fakeUnitInfo } from "../helpers/fakes";
+import { AssociationUpdater } from "../../../EntityNameChanger/updaters/domainModels/AssociationUpdater";
 import { FlowUpdater } from "../../../EntityNameChanger/updaters/microflows/FlowUpdater";
 import { PageUpdater } from "../../../EntityNameChanger/updaters/pages/PageUpdater";
 import { ReferenceUpdater } from "../../../EntityNameChanger/updaters/references/ReferenceUpdater";
@@ -57,10 +59,10 @@ const PLAN_LABELS = [
   "JavaScript actions",
   "Document templates",
   "Datasets",
-  "Associations",
+  "Associations (plan)",
 ];
 
-const RENAME_LABELS = ["Microflows", "Nanoflows", "Pages", "Snippets"];
+const RENAME_LABELS = ["Associations", "Microflows", "Nanoflows", "Pages", "Snippets"];
 
 const REFERENCE_LABELS = [
   "References in domain models",
@@ -87,11 +89,12 @@ const REFRESH_LABELS = ["Refresh pages", "Refresh snippets"];
 
 const context = fakeContext();
 
-function create(renamePages = false, renames = QualifiedNameRenames.forEntity(context)) {
+function create(renamePages = false, renames = QualifiedNameRenames.forEntity(context), associationPlan = new AssociationRenamePlan()) {
   return createUpdaters(model, {
     context,
     documentNames: new DocumentNameRegistry(),
     renames,
+    associationPlan,
     options: { renamePages },
   });
 }
@@ -132,7 +135,7 @@ describe("createUpdaters", () => {
 
   it("titles the plan steps", () => {
     const titles = all().map((u) => u.title).filter((t) => t !== undefined);
-    expect(titles).toEqual(["Planning microflows", "Planning nanoflows", "Planning pages", "Planning snippets", "Refreshing pages", "Refreshing snippets"]);
+    expect(titles).toEqual(["Planning microflows", "Planning nanoflows", "Planning pages", "Planning snippets", "Planning associations", "Refreshing pages", "Refreshing snippets"]);
   });
 
   it("ignores the deprecated renamePages option", () => {
@@ -145,6 +148,7 @@ describe("createUpdaters", () => {
       "Nanoflows (plan)",
       "Pages (plan)",
       "Snippets (plan)",
+      "Associations (plan)",
       ...RENAME_LABELS,
       ...REFERENCE_LABELS,
       ...REFRESH_LABELS,
@@ -235,6 +239,24 @@ describe("createUpdaters", () => {
     const event = { $Type: "ScheduledEvents$ScheduledEvent", microflow: "MyModule.ACT_Order" };
     await byLabel("References in scheduled events", groups).update(event as unknown as Primitives.UnitBase, fakeUnitInfo("se", "ScheduledEvents$ScheduledEvent", "MyModule"));
     expect(event.microflow).toBe("MyModule.ACT_Purchase");
+  });
+
+  it("plans associations last and renames them first, with the shared plans", async () => {
+    const associationPlan = new AssociationRenamePlan();
+    const renames = QualifiedNameRenames.forEntity(context);
+    const groups = create(false, renames, associationPlan);
+    expect(groups.planners.at(-1)).toBeInstanceOf(AssociationUpdater);
+    expect(groups.renamers[0]).toBeInstanceOf(AssociationUpdater);
+    expect(byLabel("Associations (plan)", groups).access).toBe(model.domainModels);
+    const association = { $Type: "DomainModels$CrossAssociation", $ID: "a1", name: "Invoice_Order", parent: "Other.Invoice", child: "MyModule.Order" };
+    const other = { $Type: "DomainModels$DomainModel", $ID: "dm-2", entities: [], associations: [], crossAssociations: [association] } as unknown as Primitives.UnitBase;
+    const info = fakeUnitInfo("dm-2", "DomainModels$DomainModel", "Other");
+    await byLabel("Associations (plan)", groups).update(other, info);
+    expect(association.name).toBe("Invoice_Order");
+    expect(associationPlan.get("dm-2")).toEqual(new Map([["a1", "Invoice_Purchase"]]));
+    expect(renames.map.get("Other.Invoice_Order")).toBe("Other.Invoice_Purchase");
+    expect(await byLabel("Associations", groups).update(other, info)).toMatchObject({ changed: true, renamedAssociations: 1 });
+    expect(association.name).toBe("Invoice_Purchase");
   });
 
   it("documents the excluded types with a reason", () => {

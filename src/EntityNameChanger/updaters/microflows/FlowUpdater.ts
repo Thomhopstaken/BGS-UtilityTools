@@ -1,6 +1,6 @@
 import type { Microflows, Primitives } from "@mendix/extensions-api";
 import type { DocumentNameRegistry } from "../../framework/DocumentNameRegistry";
-import type { DocumentRenamePlan } from "../../framework/DocumentRenamePlan";
+import { type DocumentRenamePlan, qualifiedName } from "../../framework/DocumentRenamePlan";
 import type { QualifiedNameRenames } from "../../framework/QualifiedNameRenames";
 import { UNCHANGED, type UnitAccess, type UnitUpdater, type UnitUpdateResult, type UpdaterMode } from "../../framework/types";
 import { planDocumentRename } from "../shared/renameDocument";
@@ -78,7 +78,7 @@ export class FlowUpdater<TUnit extends FlowDocument> implements UnitUpdater<TUni
       this.deps.documentNames,
       helper.shouldRenameDocument(flow),
     );
-    this.deps.plan.set(info.$ID, document);
+    this.deps.plan.set(info.$ID, document, qualifiedName(info.moduleName, flow.name));
     this.recordRenames(info, flow.name, document.renamedTo);
     console.info(
       `planned ${this.kind} ${info.moduleName}.${flow.name}: renamedTo=${document.renamedTo}, ${helper.parameterRenames().length} parameter renames`,
@@ -107,6 +107,7 @@ export class FlowUpdater<TUnit extends FlowDocument> implements UnitUpdater<TUni
       renamedVariables: helper.renames.length,
       updatedReferences: 0,
       skippedRenames: helper.skippedRenames + document.skipped,
+      renamedAssociations: 0,
     };
     console.info(
       `${info.moduleName}.${oldName}: changed=${result.changed}, ${result.renamedVariables} renames, ${result.skippedRenames} skipped`,

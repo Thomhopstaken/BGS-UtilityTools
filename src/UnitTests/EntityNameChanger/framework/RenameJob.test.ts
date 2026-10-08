@@ -4,13 +4,14 @@ import { changed, fakeContext, fakeProgressRunner, fakeUnit, fakeUnitAccess, fak
 import {
   buildSteps,
   type EntityStep,
-  groupByUpdater,
   runBatch,
   runBatches,
   runRenameJob,
+  runUpdater,
   unitDisplayName,
   updateUnit,
 } from "../../../EntityNameChanger/framework/RenameJob";
+import { UnitInfoCache } from "../../../EntityNameChanger/framework/UnitInfoCache";
 import type { PlannedBatch } from "../../../EntityNameChanger/framework/RenamePlanner";
 import { RenameReport } from "../../../EntityNameChanger/framework/RenameReport";
 import { UNCHANGED, type UnitUpdater } from "../../../EntityNameChanger/framework/types";
@@ -132,20 +133,6 @@ describe("runBatches", () => {
   });
 });
 
-describe("groupByUpdater", () => {
-  it("groups batches per updater in planner order", () => {
-    const flows = fakeUpdater(fakeUnitAccess([]));
-    const pages = fakeUpdater(fakeUnitAccess([]), undefined, { label: "Pages", unitType: "Pages$Page" });
-    const b1 = batchOf(flows, [fakeUnitInfo("a", MF)]);
-    const b2 = batchOf(flows, [fakeUnitInfo("b", MF)]);
-    const b3 = batchOf(pages, [fakeUnitInfo("p", "Pages$Page")]);
-    const groups = groupByUpdater([b1, b2, b3]);
-    expect([...groups.keys()]).toEqual([flows, pages]);
-    expect(groups.get(flows)).toEqual([b1, b2]);
-    expect(groups.get(pages)).toEqual([b3]);
-  });
-});
-
 describe("updateUnit", () => {
   it("reports a failing save as a unit error", async () => {
     const access = fakeUnitAccess([fakeUnit("a")]);
@@ -166,49 +153,80 @@ describe("updateUnit", () => {
   });
 });
 
-describe("buildSteps", () => {
-  it("creates the planner steps, the entity step, then the updater steps", async () => {
-    const planAccess = fakeUnitAccess([fakeUnit("a"), fakeUnit("b")]);
-    const planner = fakeUpdater(planAccess, undefined, { label: "Microflows (plan)", title: "Planning microflows", description: "Finding flows" });
-    const updater = fakeUpdater(fakeUnitAccess([fakeUnit("a")]), undefined, { description: "Renaming flows" });
-    const planBatchList: PlannedBatch[] = [
-      { updater: planner, infos: [fakeUnitInfo("a", MF)], first: 1, last: 1, total: 2 },
-      { updater: planner, infos: [fakeUnitInfo("b", MF)], first: 2, last: 2, total: 2 },
-    ];
+function prepareStep(run: EntityStep["run"] = async () => true): EntityStep {
+  return { title: "Preparing", run: vi.fn(run) };
+}
+
+describe("runUpdater", () => {
+  it("lists the units when it runs, then runs the batches", async () => {
+    const access = fakeUnitAccess([fakeUnit("a"), fakeUnit("b"), fakeUnit("c")], [fakeUnitInfo("a", MF), fakeUnitInfo("b", MF), fakeUnitInfo("c", MF)]);
     const report = new RenameReport();
+    expect(await runUpdater(fakeUpdater(access), report, context, 2, new UnitInfoCache())).toBe(true);
+    expect(access.getUnitsInfoCalls).toBe(1);
+    expect(access.loadCalls).toEqual([{ maxUnitsToLoad: 2 }, { maxUnitsToLoad: 1 }]);
+    expect(report.checkedUnits).toBe(3);
+  });
+
+  it("returns a message when the units cannot be listed", async () => {
+    const access = fakeUnitAccess([]);
+    access.getUnitsInfo = async () => {
+      throw new Error("offline");
+    };
+    expect(await runUpdater(fakeUpdater(access), new RenameReport(), context, 2, new UnitInfoCache())).toBe("Could not list microflows: Error: offline");
+  });
+});
+
+describe("buildSteps", () => {
+  it("creates prepare, planner, entity and updater steps without listing units", async () => {
+    const planAccess = fakeUnitAccess([fakeUnit("a"), fakeUnit("b")], [fakeUnitInfo("a", MF), fakeUnitInfo("b", MF)]);
+    const updateAccess = fakeUnitAccess([fakeUnit("a")], [fakeUnitInfo("a", MF)]);
+    const planner = fakeUpdater(planAccess, undefined, { label: "Microflows (plan)", title: "Planning microflows", description: "Finding flows" });
+    const updater = fakeUpdater(updateAccess, undefined, { description: "Renaming flows" });
+    const report = new RenameReport();
+    const prepare = prepareStep();
     const entity = entityStep();
-    const steps = buildSteps(planBatchList, entity, [batchOf(updater, [fakeUnitInfo("a", MF)])], report, context);
+    const steps = buildSteps({ prepare, planners: [planner], entityStep: entity, updaters: [updater] }, report, context, 1);
     expect(steps.map((s) => [s.title, s.description])).toEqual([
-      ["Planning microflows", "Finding flows (Order -> Purchase), 2 documents"],
+      ["Preparing", "Checking MyModule.Order and loading document names"],
+      ["Planning microflows", "Finding flows (Order -> Purchase)"],
       ["Rename entity", "MyModule.Order -> Purchase"],
-      ["Updating microflows", "Renaming flows (Order -> Purchase), 1 documents"],
+      ["Updating microflows", "Renaming flows (Order -> Purchase)"],
     ]);
+    expect(planAccess.getUnitsInfoCalls + updateAccess.getUnitsInfoCalls).toBe(0);
     expect(await steps[0].action()).toBe(true);
+    expect(prepare.run).toHaveBeenCalledWith(report);
+    expect(await steps[1].action()).toBe(true);
     expect(planAccess.loadCalls).toHaveLength(2);
     expect(report.checkedUnits).toBe(2);
-    expect(await steps[1].action()).toBe(true);
+    expect(await steps[2].action()).toBe(true);
     expect(entity.run).toHaveBeenCalledWith(report);
   });
 
-  it("creates a separate step per updater", () => {
-    const flows = fakeUpdater(fakeUnitAccess([]));
-    const pages = fakeUpdater(fakeUnitAccess([]), undefined, { label: "Pages", unitType: "Pages$Page" });
-    const steps = buildSteps(
-      [],
-      entityStep(),
-      [batchOf(flows, [fakeUnitInfo("a", MF)]), batchOf(pages, [fakeUnitInfo("p", "Pages$Page")])],
-      new RenameReport(),
-      context,
-    );
-    expect(steps.map((s) => s.title)).toEqual(["Rename entity", "Updating microflows", "Updating pages"]);
+  it("leaves out stubs and keeps an empty updater as a step", () => {
+    const stub = fakeUpdater(fakeUnitAccess([]), undefined, { label: "Rules", implemented: false });
+    const empty = fakeUpdater(fakeUnitAccess([]), undefined, { label: "Pages", unitType: "Pages$Page" });
+    const steps = buildSteps({ prepare: prepareStep(), planners: [stub], entityStep: entityStep(), updaters: [empty] }, new RenameReport(), context);
+    expect(steps.map((s) => s.title)).toEqual(["Preparing", "Rename entity", "Updating pages"]);
+  });
+
+  it("lists units once per model api", async () => {
+    const access = fakeUnitAccess([fakeUnit("a")], [fakeUnitInfo("a", MF)]);
+    const first = fakeUpdater(access, undefined, { label: "Microflows (plan)" });
+    const second = fakeUpdater(access);
+    const steps = buildSteps({ prepare: prepareStep(), planners: [first], entityStep: entityStep(), updaters: [second] }, new RenameReport(), context);
+    for (const step of steps) {
+      await step.action();
+    }
+    expect(access.getUnitsInfoCalls).toBe(1);
+    expect(access.loadCalls).toHaveLength(2);
   });
 });
 
 describe("runRenameJob", () => {
-  it("runs planners, the entity step, then the updaters, and returns the report", async () => {
+  it("opens the dialog before listing units, then runs prepare, planners, entity step and updaters", async () => {
     const calls: string[] = [];
     const planAccess = fakeUnitAccess([fakeUnit("a")], [fakeUnitInfo("a", MF)]);
-    const updateAccess = fakeUnitAccess([fakeUnit("a")], [fakeUnitInfo("a", MF)]);
+    const updateAccess = fakeUnitAccess([fakeUnit("b")], [fakeUnitInfo("b", MF)]);
     const planner = fakeUpdater(
       planAccess,
       async () => {
@@ -221,37 +239,65 @@ describe("runRenameJob", () => {
       calls.push("update");
       return changed();
     });
+    const prepare = prepareStep(async () => {
+      calls.push("prepare");
+      return true;
+    });
     const entity = entityStep(async (report) => {
       calls.push("entity");
       report.entityRenamed = true;
       return true;
     });
     const runner = fakeProgressRunner();
+    const run = runner.run;
+    runner.run = async (title, steps) => {
+      calls.push(`dialog (${planAccess.getUnitsInfoCalls + updateAccess.getUnitsInfoCalls} listings)`);
+      return run(title, steps);
+    };
     const { dialog, report } = await runRenameJob(
-      { planners: [planner], entityStep: entity, updaters: [updater], runProgress: runner.run },
+      { prepare, planners: [planner], entityStep: entity, updaters: [updater], runProgress: runner.run },
       context,
     );
     expect(dialog.result).toBe("Success");
-    expect(calls).toEqual(["plan", "entity", "update"]);
+    expect(calls).toEqual(["dialog (0 listings)", "prepare", "plan", "entity", "update"]);
     expect(runner.titles).toEqual(["Renaming MyModule.Order to Purchase"]);
-    expect(runner.steps.map((s) => s.title)).toEqual(["Planning microflows", "Rename entity", "Updating microflows"]);
+    expect(runner.steps.map((s) => s.title)).toEqual(["Preparing", "Planning microflows", "Rename entity", "Updating microflows"]);
     expect(planAccess.saved).toEqual([]);
-    expect(updateAccess.saved.map((u) => u.$ID)).toEqual(["a"]);
+    expect(updateAccess.saved.map((u) => u.$ID)).toEqual(["b"]);
     expect(report.entityRenamed).toBe(true);
     expect(report.entitySkipReason).toBeNull();
     expect(report.incompleteReason).toBeNull();
   });
 
-  it("passes the batch size to the planner", async () => {
+  it("passes the batch size to each step", async () => {
     const infos = [fakeUnitInfo("a", MF), fakeUnitInfo("b", MF), fakeUnitInfo("c", MF)];
     const access = fakeUnitAccess([fakeUnit("a"), fakeUnit("b"), fakeUnit("c")], infos);
     const runner = fakeProgressRunner();
     await runRenameJob(
-      { planners: [], entityStep: entityStep(), updaters: [fakeUpdater(access)], runProgress: runner.run, batchSize: 2 },
+      { prepare: prepareStep(), planners: [], entityStep: entityStep(), updaters: [fakeUpdater(access)], runProgress: runner.run, batchSize: 2 },
       context,
     );
-    expect(runner.steps).toHaveLength(2);
+    expect(runner.steps).toHaveLength(3);
     expect(access.loadCalls).toEqual([{ maxUnitsToLoad: 2 }, { maxUnitsToLoad: 1 }]);
+  });
+
+  it("stops before listing or loading anything when preparing fails", async () => {
+    const access = fakeUnitAccess([fakeUnit("a")], [fakeUnitInfo("a", MF)]);
+    const prepare = prepareStep(async (report) => {
+      report.skipEntity("An entity named MyModule.Purchase already exists.");
+      return "An entity named MyModule.Purchase already exists.";
+    });
+    const entity = entityStep();
+    const runner = fakeProgressRunner();
+    const { dialog, report } = await runRenameJob(
+      { prepare, planners: [fakeUpdater(access)], entityStep: entity, updaters: [fakeUpdater(access, async () => changed())], runProgress: runner.run },
+      context,
+    );
+    expect(dialog.result).toBe("Failure");
+    expect(access.getUnitsInfoCalls).toBe(0);
+    expect(access.saved).toEqual([]);
+    expect(entity.run).not.toHaveBeenCalled();
+    expect(report.entitySkipReason).toBe("An entity named MyModule.Purchase already exists.");
   });
 
   it("stops before any update when the entity step fails", async () => {
@@ -263,7 +309,7 @@ describe("runRenameJob", () => {
     });
     const runner = fakeProgressRunner();
     const { dialog, report } = await runRenameJob(
-      { planners: [], entityStep: entity, updaters: [updater], runProgress: runner.run },
+      { prepare: prepareStep(), planners: [], entityStep: entity, updaters: [updater], runProgress: runner.run },
       context,
     );
     expect(dialog.result).toBe("Failure");
@@ -278,18 +324,25 @@ describe("runRenameJob", () => {
     ["Failure", "the process failed; nothing was changed"],
   ] as const)("reports nothing changed on %s before the entity rename", async (result, reason) => {
     const runner = fakeProgressRunner({ result } as ProgressDialogResult);
-    const { report } = await runRenameJob({ planners: [], entityStep: entityStep(), updaters: [], runProgress: runner.run }, context);
+    const { report } = await runRenameJob(
+      { prepare: prepareStep(), planners: [], entityStep: entityStep(), updaters: [], runProgress: runner.run },
+      context,
+    );
     expect(report.entitySkipReason).toBe(reason);
     expect(report.incompleteReason).toBeNull();
   });
 
   it("reports an incomplete rename when cancelled after the entity rename", async () => {
-    // Runs the entity step, then cancels before the updaters.
+    // Runs prepare and the entity step, then cancels before the updaters.
     const runProgress = async (_title: string, steps: { action: () => Promise<true | string> }[]) => {
       await steps[0].action();
+      await steps[1].action();
       return { result: "UserCancelled" } as ProgressDialogResult;
     };
-    const { report } = await runRenameJob({ planners: [], entityStep: entityStep(), updaters: [], runProgress }, context);
+    const { report } = await runRenameJob(
+      { prepare: prepareStep(), planners: [], entityStep: entityStep(), updaters: [], runProgress },
+      context,
+    );
     expect(report.entityRenamed).toBe(true);
     expect(report.entitySkipReason).toBeNull();
     expect(report.incompleteReason).toBe(
@@ -303,8 +356,12 @@ describe("runRenameJob", () => {
       report.skipEntity("name taken");
       return "name taken";
     });
-    const { dialog, report } = await runRenameJob({ planners: [], entityStep: entity, updaters: [], runProgress: runner.run }, context);
+    const { dialog, report } = await runRenameJob(
+      { prepare: prepareStep(), planners: [], entityStep: entity, updaters: [], runProgress: runner.run },
+      context,
+    );
     expect(dialog.result).toBe("Failure");
     expect(report.entitySkipReason).toBe("name taken");
   });
 });
+

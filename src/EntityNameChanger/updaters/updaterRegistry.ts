@@ -1,4 +1,5 @@
-import type { Primitives, StudioProApi } from "@mendix/extensions-api";
+import type { DomainModels, Primitives, StudioProApi } from "@mendix/extensions-api";
+import type { AssociationRenamePlan } from "../framework/AssociationRenamePlan";
 import type { DocumentNameRegistry } from "../framework/DocumentNameRegistry";
 import { DocumentRenamePlan } from "../framework/DocumentRenamePlan";
 import { NamingPolicy } from "../framework/NamingPolicy";
@@ -7,6 +8,7 @@ import type { RenameContext } from "../framework/RenameContext";
 import type { RenameOptions, UnitAccess, UnitUpdater, UpdaterMode } from "../framework/types";
 import { FlowUpdater, type FlowUpdaterDeps } from "./microflows/FlowUpdater";
 import { MicroflowHelper } from "./microflows/MicroflowHelper";
+import { AssociationUpdater, type AssociationUpdaterDeps } from "./domainModels/AssociationUpdater";
 import { ReferenceCache } from "./microflows/ReferenceCache";
 import { ReferenceResolver } from "./microflows/ReferenceResolver";
 import { PageHelper } from "./pages/PageHelper";
@@ -22,6 +24,8 @@ export type UpdaterDeps = {
   documentNames: DocumentNameRegistry;
   // Seeded with the entity rename; filled by the planners, read by the reference updaters.
   renames: QualifiedNameRenames;
+  // Filled by the association planner; read by the association renamer and the entity step.
+  associationPlan: AssociationRenamePlan;
   options: RenameOptions;
 };
 
@@ -107,6 +111,15 @@ export function createUpdaters(model: AppModel, deps: UpdaterDeps): UpdaterGroup
     plan,
   };
   const pageDeps: PageUpdaterDeps = { helper: new PageHelper(context, naming), documentNames, renames, plan };
+  const associationDeps: AssociationUpdaterDeps = {
+    context,
+    naming,
+    documentNames,
+    documentPlan: plan,
+    renames,
+    plan: deps.associationPlan,
+  };
+  const domainModels = model.domainModels as unknown as UnitAccess<DomainModels.DomainModel>;
 
   const flows = (mode: UpdaterMode, unitType: "Microflows$Microflow" | "Microflows$Nanoflow"): UnitUpdater => {
     const kind = unitType === "Microflows$Microflow" ? "microflow" : "nanoflow";
@@ -180,11 +193,13 @@ export function createUpdaters(model: AppModel, deps: UpdaterDeps): UpdaterGroup
       "Renaming document templates and their parameters",
     ),
     createStubUpdater("Datasets", "DataSets$DataSet", model.dataSets, "Renaming datasets and their parameters"),
-    // Associations in every own module, cross-module associations included.
-    createStubUpdater("Associations", "DomainModels$DomainModel", model.domainModels, "Renaming associations"),
+    // Last: needs every planned document rename, for names shared by a document and an association.
+    new AssociationUpdater("plan", domainModels, associationDeps) as unknown as UnitUpdater,
   ];
 
   const renamers: UnitUpdater[] = [
+    // Other modules' domain models; the entity's own one is renamed by the entity step.
+    new AssociationUpdater("rename", domainModels, associationDeps) as unknown as UnitUpdater,
     flows("rename", "Microflows$Microflow"),
     flows("rename", "Microflows$Nanoflow"),
     pages("rename", "Pages$Page"),

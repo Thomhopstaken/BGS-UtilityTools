@@ -20,6 +20,7 @@ export type UnitUpdateResult = {
   updatedReferences: number;
   // Renames that were found but not applied, e.g. because the new name is taken.
   skippedRenames: number;
+  renamedAssociations: number;
 };
 
 export const UNCHANGED: Readonly<UnitUpdateResult> = Object.freeze({
@@ -28,6 +29,7 @@ export const UNCHANGED: Readonly<UnitUpdateResult> = Object.freeze({
   renamedVariables: 0,
   updatedReferences: 0,
   skippedRenames: 0,
+  renamedAssociations: 0,
 });
 
 // plan: read-only, decides renames; rename: applies them to the unit, which the job then saves.

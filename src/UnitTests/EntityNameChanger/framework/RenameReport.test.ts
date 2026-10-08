@@ -91,10 +91,68 @@ describe("RenameReport", () => {
     expect(report.summary()).toEqual([
       "Checked 4 documents, updated 2.",
       "Renamed 1 documents.",
-      "Updated 4 references to the renamed entity, documents and parameters.",
-      "Skipped 1 renames because the new name is already in use.",
+      "Updated 4 references to the renamed entity, documents, parameters and associations.",
+      "Skipped 1 renames because the new name is already in use (see the log).",
       "Failed: Microflows MyModule.ACT_Broken: boom",
       "Entity not renamed: reason",
     ]);
+  });
+
+  it("sums renamed associations and reports them", () => {
+    const report = new RenameReport();
+    report.addResult("Associations", fakeUnitInfo("dm-2", "DomainModels$DomainModel", "Other"), changed({ renamedVariables: 0, renamedAssociations: 2 }));
+    report.renamedAssociations += 1;
+    expect(report.renamedAssociations).toBe(3);
+    expect(report.summary()).toContain("Renamed 3 associations.");
+    expect(report.navigationWarnings()).toEqual([]);
+  });
+
+  describe("navigation warnings", () => {
+    const nanoflow = fakeUnitInfo("u5", "Microflows$Nanoflow", "MyModule", "NAV_Order");
+    const snippet = fakeUnitInfo("u6", "Pages$Snippet", "MyModule", "Order_Snippet");
+
+    it("is empty when no document was renamed", () => {
+      const report = new RenameReport();
+      report.addResult("Microflows", info, changed());
+      report.addResult("Pages", third, { ...UNCHANGED });
+      expect(report.renamedDocuments).toEqual([]);
+      expect(report.navigationWarnings()).toEqual([]);
+    });
+
+    it("records renamed documents with qualified names", () => {
+      const report = new RenameReport();
+      report.addResult("Microflows", info, changed({ renamedTo: "ACT_Purchase" }));
+      expect(report.renamedDocuments).toEqual([
+        { unitType: "Microflows$Microflow", oldQualifiedName: "MyModule.ACT_Order", newQualifiedName: "MyModule.ACT_Purchase" },
+      ]);
+    });
+
+    it("lists renamed pages, microflows and nanoflows", () => {
+      const report = new RenameReport();
+      report.addResult("Microflows", info, changed({ renamedTo: "ACT_Purchase" }));
+      report.addResult("Nanoflows", nanoflow, changed({ renamedTo: "NAV_Purchase" }));
+      report.addResult("Pages", third, changed({ renamedTo: "Purchase_Edit" }));
+      const lines = report.navigationWarnings();
+      expect(lines[0]).toContain("App > Navigation");
+      expect(lines.slice(1)).toEqual([
+        "MyModule.ACT_Order -> MyModule.ACT_Purchase",
+        "MyModule.NAV_Order -> MyModule.NAV_Purchase",
+        "MyModule.Order_Edit -> MyModule.Purchase_Edit",
+      ]);
+    });
+
+    it("ignores snippets and reference-only changes", () => {
+      const report = new RenameReport();
+      report.addResult("Snippets", snippet, changed({ renamedTo: "Purchase_Snippet" }));
+      report.addResult("References in microflows", other, changed({ updatedReferences: 2 }));
+      expect(report.renamedDocuments).toHaveLength(1);
+      expect(report.navigationWarnings()).toEqual([]);
+    });
+
+    it("skips a unit without a name", () => {
+      const report = new RenameReport();
+      report.addResult("Pages", { $ID: "u7", $Type: "Pages$Page" } as never, changed({ renamedTo: "Purchase_Edit" }));
+      expect(report.navigationWarnings()).toEqual([]);
+    });
   });
 });
