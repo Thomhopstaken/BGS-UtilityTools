@@ -32,7 +32,7 @@ export function validateNewName(entity: { readonly name: string } | undefined, n
     return "Select an entity to rename.";
   }
   if (newName === null || newName.length === 0) {
-    return "Fill in a new name.";
+    return "Enter a new name.";
   }
   if (newName === entity.name) {
     return "The new name is the same as the current name.";
@@ -42,8 +42,35 @@ export function validateNewName(entity: { readonly name: string } | undefined, n
     return `'${newName}' is a reserved word and cannot be used as an entity name.`;
   }
   if (!/^[A-Za-z]\w*$/.test(newName)) {
-    return "Name contains spaces or illegal characters";
+    return "Use letters, digits and underscores, starting with a letter.";
   }
   console.debug(`new name '${newName}' for ${entity.name} is valid`);
   return null;
+}
+
+export type PaneField = "module" | "entity" | "name";
+
+export type FieldProblem = {
+  readonly field: PaneField;
+  readonly message: string;
+};
+
+export type PaneRequestInput = {
+  readonly moduleName: string;
+  readonly entity: { readonly name: string } | undefined;
+  readonly newName: string;
+};
+
+// Checks the whole form; the problem names the field to mark, or null when the rename can start.
+export function validateRequest(input: PaneRequestInput): FieldProblem | null {
+  if (input.moduleName.length === 0) {
+    console.debug("request: no module selected");
+    return { field: "module", message: "Select a module." };
+  }
+  if (input.entity === undefined) {
+    console.debug(`request: no entity selected in ${input.moduleName}`);
+    return { field: "entity", message: "Select an entity to rename." };
+  }
+  const problem = validateNewName(input.entity, input.newName);
+  return problem === null ? null : { field: "name", message: problem };
 }

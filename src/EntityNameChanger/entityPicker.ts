@@ -1,0 +1,50 @@
+import * as Mx from "@mendix/extensions-api";
+
+type UnitInfos = readonly Readonly<Mx.Primitives.UnitInfo>[];
+
+// One entity in the pane's pickers, as plain data.
+export type EntityOption = {
+  readonly id: string;
+  readonly name: string;
+  readonly moduleName: string;
+  readonly domainModelId: string;
+};
+
+// Module name -> its entities sorted by name; modules sorted by name. Entities of an unknown domain model are left out.
+export function groupEntitiesByModule(entities: readonly Mx.DomainModels.Entity[], unitInfos: UnitInfos): Map<string, EntityOption[]> {
+  const moduleByDomainModel = new Map<string, string>();
+  for (const info of unitInfos) {
+    if (info.moduleName !== undefined) {
+      moduleByDomainModel.set(info.$ID, info.moduleName);
+    }
+  }
+  const byModule = new Map<string, EntityOption[]>();
+  let skipped = 0;
+  for (const entity of entities) {
+    const domainModelId = Mx.getContainer<Mx.DomainModels.DomainModel>(entity)?.$ID;
+    const moduleName = domainModelId === undefined ? undefined : moduleByDomainModel.get(domainModelId);
+    if (domainModelId === undefined || moduleName === undefined) {
+      console.debug(`entity ${entity.name}: module unknown, left out of the picker`);
+      skipped++;
+      continue;
+    }
+    const options = byModule.get(moduleName) ?? [];
+    options.push({ id: entity.$ID, name: entity.name, moduleName, domainModelId });
+    byModule.set(moduleName, options);
+  }
+  const sorted = new Map([...byModule.entries()].sort(([a], [b]) => compareNames(a, b)));
+  for (const options of sorted.values()) {
+    options.sort((a, b) => compareNames(a.name, b.name));
+  }
+  console.info(`entity picker: ${entities.length - skipped} entities in ${sorted.size} modules, ${skipped} left out`);
+  return sorted;
+}
+
+function compareNames(a: string, b: string): number {
+  return a.localeCompare(b, "en", { sensitivity: "base" }) || a.localeCompare(b, "en");
+}
+
+// Every entity name in the app's own modules; used to protect longer names (OrderLine when renaming Order).
+export function allEntityNames(byModule: ReadonlyMap<string, readonly EntityOption[]>): string[] {
+  return [...byModule.values()].flatMap((options) => options.map((o) => o.name));
+}

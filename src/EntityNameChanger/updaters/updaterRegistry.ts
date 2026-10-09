@@ -5,7 +5,7 @@ import { DocumentRenamePlan } from "../framework/DocumentRenamePlan";
 import { NamingPolicy } from "../framework/NamingPolicy";
 import type { QualifiedNameRenames } from "../framework/QualifiedNameRenames";
 import type { RenameContext } from "../framework/RenameContext";
-import type { RenameOptions, UnitAccess, UnitUpdater, UpdaterMode } from "../framework/types";
+import type { UnitAccess, UnitUpdater, UpdaterMode } from "../framework/types";
 import { FlowUpdater, type FlowUpdaterDeps } from "./microflows/FlowUpdater";
 import { MicroflowHelper } from "./microflows/MicroflowHelper";
 import { AssociationUpdater, type AssociationUpdaterDeps } from "./domainModels/AssociationUpdater";
@@ -26,7 +26,6 @@ export type UpdaterDeps = {
   renames: QualifiedNameRenames;
   // Filled by the association planner; read by the association renamer and the entity step.
   associationPlan: AssociationRenamePlan;
-  options: RenameOptions;
 };
 
 // Document types that are never renamed, with the reason. Their references are still updated where listed

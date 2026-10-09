@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { findTakenEntityName, isReservedName, RESERVED_NAMES, validateNewName } from "../../EntityNameChanger/validation";
+import { findTakenEntityName, isReservedName, RESERVED_NAMES, validateNewName, validateRequest } from "../../EntityNameChanger/validation";
 
 const order = { name: "Order" };
 
@@ -9,7 +9,7 @@ describe("validateNewName", () => {
   });
 
   it.each([null, ""])("requires a name (%j)", (name) => {
-    expect(validateNewName(order, name)).toBe("Fill in a new name.");
+    expect(validateNewName(order, name)).toBe("Enter a new name.");
   });
 
   it("rejects the current name", () => {
@@ -17,7 +17,7 @@ describe("validateNewName", () => {
   });
 
   it.each(["New Order", "1Order", "_Order", "Order-2", "Ordér", "Order."])("rejects '%s'", (name) => {
-    expect(validateNewName(order, name)).toBe("Name contains spaces or illegal characters");
+    expect(validateNewName(order, name)).toBe("Use letters, digits and underscores, starting with a letter.");
   });
 
   it.each(["Object", "object", "OBJECT", "currentuser", "CurrentUser", "mendixobject", "ID", "_", "Type"])(
@@ -55,5 +55,28 @@ describe("findTakenEntityName", () => {
   it("accepts a free name, including one differing only in case", () => {
     expect(findTakenEntityName(["Order", "purchase"], "MyModule", "Purchase")).toBeNull();
     expect(findTakenEntityName([], "MyModule", "Purchase")).toBeNull();
+  });
+});
+describe("validateRequest", () => {
+  it("requires a module first", () => {
+    expect(validateRequest({ moduleName: "", entity: undefined, newName: "" })).toEqual({ field: "module", message: "Select a module." });
+  });
+
+  it("requires an entity", () => {
+    expect(validateRequest({ moduleName: "MyModule", entity: undefined, newName: "Purchase" })).toEqual({
+      field: "entity",
+      message: "Select an entity to rename.",
+    });
+  });
+
+  it("puts name problems on the name field", () => {
+    expect(validateRequest({ moduleName: "MyModule", entity: order, newName: "1Order" })).toEqual({
+      field: "name",
+      message: "Use letters, digits and underscores, starting with a letter.",
+    });
+  });
+
+  it("accepts a complete request", () => {
+    expect(validateRequest({ moduleName: "MyModule", entity: order, newName: "Purchase" })).toBeNull();
   });
 });

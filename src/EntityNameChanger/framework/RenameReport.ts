@@ -5,6 +5,8 @@ export type UnitOutcome = {
   label: string;
   unitId: string;
   name: string;
+  // Module.Name, or the name alone for a unit outside a module.
+  qualifiedName: string;
   result: UnitUpdateResult;
 };
 
@@ -64,7 +66,9 @@ export class RenameReport {
     this.renamedAssociations += result.renamedAssociations;
     if (result.changed) {
       this.changedIds.add(info.$ID);
-      this.changed.push({ label, unitId: info.$ID, name: info.name ?? info.$ID, result });
+      const name = info.name ?? info.$ID;
+      const qualifiedName = info.moduleName === undefined ? name : `${info.moduleName}.${name}`;
+      this.changed.push({ label, unitId: info.$ID, name, qualifiedName, result });
     }
     if (result.renamedTo !== null && info.name !== undefined) {
       const module = info.moduleName === undefined ? "" : `${info.moduleName}.`;
@@ -120,9 +124,14 @@ export class RenameReport {
     return lines;
   }
 
+  // Renamed documents navigation may reference; these need a manual check.
+  navigationDocuments(): DocumentRenameOutcome[] {
+    return this.renamedDocuments.filter((d) => NAVIGATION_UNIT_TYPES.has(d.unitType));
+  }
+
   // Manual-check lines for renamed documents navigation may reference; empty when none were renamed.
   navigationWarnings(): string[] {
-    const renamed = this.renamedDocuments.filter((d) => NAVIGATION_UNIT_TYPES.has(d.unitType));
+    const renamed = this.navigationDocuments();
     if (renamed.length === 0) {
       console.debug("navigation warning: no renamed pages, microflows or nanoflows");
       return [];

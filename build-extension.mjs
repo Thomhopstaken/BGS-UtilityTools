@@ -25,6 +25,7 @@ const buildContext = await esbuild.context({
     ...(commonConfig.loader ?? {}),
     ".css": "text",
     ".html": "text",
+    ".svg": "text",
   },
   outdir: outDir,
   plugins: [copyManifestPlugin(outDir), copyToAppPlugin(appDir, outDir, extensionDirectoryName)],
