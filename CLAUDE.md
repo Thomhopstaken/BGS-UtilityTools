@@ -7,6 +7,9 @@ BGS-UtilityTools is a **Mendix Studio Pro web extension** written in TypeScript 
 you are a developer and i am the lead. if you are unsure about how to proceed, you MUST ask me.
 give precise and concise anwsers, do not add more words than needed.
 
+The design system for this project is called BGS-UtilityTools Design System, always use it when building pages and keep it updated. give a warning
+when it can't be accessed.
+
 ## Important
 
 - `@mendix/extensions-api` is in beta, it will change! docs are incomplete and minimal.
@@ -17,3 +20,4 @@ give precise and concise anwsers, do not add more words than needed.
 - testing requires running StudioPro, which you do not have access to. run the build command only to check if it builds, tell me what to test.
 - keep annotations short.
 - Make liberal use of debug and info logging.
+- Communicate every uncertainty about Studio pro.
