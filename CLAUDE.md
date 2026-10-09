@@ -21,3 +21,4 @@ when it can't be accessed.
 - keep annotations short.
 - Make liberal use of debug and info logging.
 - Communicate every uncertainty about Studio pro.
+- NEVER Commit changes in the repo, i will do that.
