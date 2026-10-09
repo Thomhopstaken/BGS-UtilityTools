@@ -163,3 +163,33 @@ src/EntityNameChanger/
   MicroflowHelper.ts    detection + rename + expression rewriting
 ToDo.md                 roadmap
 ```
+
+---
+
+## 6. Entity Name Changer: documents to look at later
+
+These are the "What you need to check yourself" items from the pane's help. The Entity Name Changer doesn't handle them yet, so they need a manual check after a rename.
+
+The **Cause** column says why:
+- **API restriction**: the Extensibility API (0.11.4 / Studio Pro 11.12) gives no way to read or change it. All 53 microflow activity types in the API are handled; none is restricted.
+- **Not implemented**: the API exposes it, but the tool doesn't use it yet.
+- **By design**: deliberately left alone.
+
+| Document / element | Not handled today | Cause |
+|---|---|---|
+| Navigation (menu items, home pages, role-based home pages, login page) | References to renamed pages, microflows and nanoflows | **API restriction**: navigation is not in the API. The run log warns instead. |
+| Java action source code (`javasource/`) | Code using the old entity or proxy class names | **API restriction**: code is not part of the model API. It could be done through `app.files`, but that is risky. |
+| JavaScript action source code | Code using the old names | **API restriction**: same as Java. |
+| Rules | Rule names and rule parameters (references inside are updated) | Not implemented (stub updater) |
+| Workflows | Names | Not implemented (stub updater) |
+| Import and export mappings | Names | Not implemented (stub updater) |
+| JSON structures | Names and entity references (not in the reference pass) | Not implemented (stub updater) |
+| Message definitions | Names | Not implemented (stub updater) |
+| Document templates | Names and parameters | Not implemented (stub updater) |
+| Datasets | Names and parameters | Not implemented (stub updater) |
+| Java and JavaScript actions (model side) | Names, and entity types in parameters and return types (not in the reference pass) | Not implemented: `javaActions` and `javaScriptActions` are in the API |
+| Consumed REST and OData services | Entity references (not in the reference pass) | Not implemented: in the API |
+| ML model mappings | Entity references (not in the reference pass) | Not implemented: `mlMappingDocuments` is in the API |
+| View entity source documents (OQL) | The entity name in OQL queries | Not implemented: `viewEntitySourceDocuments` is in the API. |
+| Published REST, OData and web services | Document names and exposed names (references inside are updated) | By design: exposed names are an external contract |
+| Marketplace modules and System | Everything | By design: Marketplace content is read-only |

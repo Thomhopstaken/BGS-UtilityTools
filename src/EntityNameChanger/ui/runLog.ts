@@ -145,14 +145,22 @@ function skippedGroup(report: RenameReport): RunLogGroup {
   };
 }
 
+// One warning for all renamed documents navigation may reference; they are listed under Renamed documents.
 function navigationGroup(report: RenameReport): RunLogGroup {
+  const n = report.navigationDocuments().length;
+  console.debug(`navigation: ${n} renamed documents to check`);
   return {
     title: "Navigation",
-    rows: report.navigationDocuments().map((d) => ({
-      tone: "warning",
-      what: `${d.oldQualifiedName} → ${d.newQualifiedName}`,
-      note: "Check App > Navigation: menu items, home pages and the login page are not updated.",
-    })),
+    rows:
+      n === 0
+        ? []
+        : [
+            {
+              tone: "warning",
+              what: "Check App > Navigation",
+              note: `${n === 1 ? "1 renamed document" : `${n} renamed documents`} may be used by menu items, home pages or the login page; these are not updated.`,
+            },
+          ],
   };
 }
 

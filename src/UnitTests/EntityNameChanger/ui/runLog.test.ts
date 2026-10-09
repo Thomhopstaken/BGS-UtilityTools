@@ -124,10 +124,31 @@ describe("buildRunLog", () => {
     expect(log.groups[5].rows).toEqual([
       {
         tone: "warning",
-        what: "MyModule.ACT_Order_Save → MyModule.ACT_Purchase_Save",
-        note: "Check App > Navigation: menu items, home pages and the login page are not updated.",
+        what: "Check App > Navigation",
+        note: "1 renamed document may be used by menu items, home pages or the login page; these are not updated.",
       },
     ]);
+  });
+
+  it("gives one navigation warning for several renamed documents", () => {
+    const report = renamedReport();
+    report.addResult("Microflows", flow, changed({ renamedTo: "ACT_Purchase_Save" }));
+    report.addResult("Pages", page, changed({ renamedTo: "Purchase_Edit" }));
+    report.addResult("Pages", fakeUnitInfo("u4", "Pages$Page", "MyModule", "Order_Overview"), changed({ renamedTo: "Purchase_Overview" }));
+    const navigation = buildRunLog(success, report, context).groups.find((g) => g.title === "Navigation");
+    expect(navigation?.rows).toEqual([
+      {
+        tone: "warning",
+        what: "Check App > Navigation",
+        note: "3 renamed documents may be used by menu items, home pages or the login page; these are not updated.",
+      },
+    ]);
+  });
+
+  it("has no navigation group without renamed navigation documents", () => {
+    const report = renamedReport();
+    report.addResult("Snippets", fakeUnitInfo("u5", "Pages$Snippet", "MyModule", "Order_Snippet"), changed({ renamedTo: "Purchase_Snippet" }));
+    expect(titles(buildRunLog(success, report, context))).not.toContain("Navigation");
   });
 
   it("leaves out units changed without counts, such as refresh saves", () => {
