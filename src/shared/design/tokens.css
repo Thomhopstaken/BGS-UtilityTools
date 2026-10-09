@@ -1,0 +1,85 @@
+/* BGS-UtilityTools tokens, from the design system's tokens.json. Light on :root, dark on [data-theme="dark"]. */
+:root {
+  --brand-blue: #0c77ef;
+  --brand-green: #01c980;
+  --brand-navy: #050c35;
+
+  --surface: #ffffff;
+  --surface-sunken: #eff0f3;
+  --surface-raised: #ffffff;
+  --hairline: #dedfe3;
+  --border-control: #868898;
+
+  --ink: #1a1b1f;
+  --ink-strong: #050c35;
+  --ink-muted: #696d86;
+
+  --accent-text: #0b6bd6;
+  --accent-fill: #0b6bd6;
+  --accent-fill-hover: #0a5fc0;
+  --on-accent: #ffffff;
+  --on-green: #050c35;
+  --focus-ring: #0c77ef;
+
+  --success: #009963;
+  --success-bg: #e6f9f1;
+  --warning: #c26a05;
+  --warning-bg: #fff3e3;
+  --error: #dc2626;
+  --error-bg: #fdecec;
+  --info: #0c77ef;
+  --info-bg: #e7f1fe;
+
+  --font-display: Manrope, "Segoe UI Semibold", "Segoe UI", system-ui, sans-serif;
+  --font-ui: "Segoe UI", system-ui, -apple-system, sans-serif;
+  --font-mono: Consolas, "Cascadia Mono", "Courier New", monospace;
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-6: 24px;
+
+  --radius-sm: 2px;
+  --radius-md: 4px;
+  --radius-leaf: 12px;
+
+  --control-height: 24px;
+  --control-height-lg: 28px;
+  --pane-max-width: 500px;
+  --mark-size: 16px;
+
+  --duration-fast: 120ms;
+  --duration-enter: 200ms;
+}
+
+[data-theme="dark"] {
+  --surface: #313131;
+  --surface-sunken: #2a2a2a;
+  --surface-raised: #414141;
+  --hairline: #474747;
+  --border-control: #8a8a8a;
+
+  --ink: #f0f0f0;
+  --ink-strong: #ffffff;
+  --ink-muted: #b4b6c2;
+
+  --accent-text: #5aa2f5;
+  --focus-ring: #5aa2f5;
+
+  --success: #01c980;
+  --success-bg: #24443a;
+  --warning: #ff9216;
+  --warning-bg: #4a3a26;
+  --error: #f87171;
+  --error-bg: #4a2c2c;
+  --info: #5aa2f5;
+  --info-bg: #26394f;
+}
+
+/* The pane fills the dock; its background follows the theme. */
+html,
+body {
+  margin: 0;
+  background: var(--surface);
+}

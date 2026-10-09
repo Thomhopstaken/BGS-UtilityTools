@@ -1,6 +1,6 @@
 import type * as Mx from "@mendix/extensions-api";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { getAppstoreModuleNames, getEntities, getEntityLocation, getEntityNamesInDomainModel, setQualifiedName } from "../../EntityNameChanger/moduleModel";
+import { getAppstoreModuleNames, getEntities, loadPaneData } from "../../EntityNameChanger/moduleModel";
 import { fakeUnitInfo } from "./helpers/fakes";
 
 // The real package needs Studio Pro at runtime; only getContainer is used.
@@ -25,35 +25,6 @@ describe("getAppstoreModuleNames", () => {
   });
 });
 
-describe("getEntityLocation", () => {
-  it("returns the domain model and module of the entity", () => {
-    getContainer.mockReturnValue({ $ID: "dm-1" });
-    expect(getEntityLocation(entity("Order"), domainModelInfos)).toEqual({ domainModelId: "dm-1", moduleName: "MyModule" });
-  });
-
-  it("returns null without a container", () => {
-    getContainer.mockReturnValue(undefined);
-    expect(getEntityLocation(entity("Order"), domainModelInfos)).toBeNull();
-  });
-
-  it("returns null when the domain model is not in the unit infos", () => {
-    getContainer.mockReturnValue({ $ID: "dm-unknown" });
-    expect(getEntityLocation(entity("Order"), domainModelInfos)).toBeNull();
-  });
-});
-
-describe("setQualifiedName", () => {
-  it("prefixes the module name", () => {
-    getContainer.mockReturnValue({ $ID: "dm-1" });
-    expect(setQualifiedName(entity("Order"), domainModelInfos)).toBe("MyModule.Order");
-  });
-
-  it("shows undefined for an unknown module", () => {
-    getContainer.mockReturnValue(undefined);
-    expect(setQualifiedName(entity("Order"), domainModelInfos)).toBe("undefined.Order");
-  });
-});
-
 describe("getEntities", () => {
   it("loads own domain models only and flattens their entities", async () => {
     const loadAll = vi.fn(async (filter: (info: Mx.Primitives.UnitInfo) => boolean, _max?: number) =>
@@ -72,14 +43,17 @@ describe("getEntities", () => {
   });
 });
 
-describe("getEntityNamesInDomainModel", () => {
-  it("returns the names of the entities in the given domain model", () => {
-    getContainer.mockImplementation((e: { name: string }) => ({ $ID: e.name === "Invoice" ? "dm-2" : "dm-1" }));
-    expect(getEntityNamesInDomainModel([entity("Order"), entity("Invoice"), entity("Customer")], "dm-1")).toEqual(["Order", "Customer"]);
-  });
-
-  it("skips entities without a container", () => {
-    getContainer.mockReturnValue(undefined);
-    expect(getEntityNamesInDomainModel([entity("Order")], "dm-1")).toEqual([]);
+describe("loadPaneData", () => {
+  it("loads own modules' entities grouped by module, with the excluded modules", async () => {
+    getContainer.mockReturnValue({ $ID: "dm-1" });
+    const modules = { getModules: vi.fn(async () => [module("System"), module("Atlas_Core", true), module("MyModule")]) };
+    const loadAll = vi.fn(async () => [{ entities: [entity("Order"), entity("Customer")] }] as unknown as Mx.DomainModels.DomainModel[]);
+    const getUnitsInfo = vi.fn(async () => domainModelInfos);
+    const domainModels = { loadAll, getUnitsInfo } as unknown as Parameters<typeof loadPaneData>[1];
+    const data = await loadPaneData(modules, domainModels);
+    expect([...data.excludedModules]).toEqual(["System", "Atlas_Core"]);
+    expect([...data.byModule.keys()]).toEqual(["MyModule"]);
+    expect(data.byModule.get("MyModule")!.map((o) => o.name)).toEqual(["Customer", "Order"]);
+    expect(loadAll.mock.calls[0]).toHaveLength(2);
   });
 });

@@ -10,7 +10,7 @@ export const component: IComponent = {
 
         const panehandle = await studioPro.ui.panes.register(
             {
-                title: "EntityNameChanger",
+                title: "Entity Name Changer",
                 initialPosition: "right",
             },
             {
@@ -26,7 +26,7 @@ export const component: IComponent = {
             subMenus: [
                 {
                     menuId: "BGS-UtilityTools.ShowMenu",
-                    caption: "EntityNameChanger",
+                    caption: "Entity Name Changer",
                     action: async () => {
                         await studioPro.ui.panes.open(panehandle);
                     },

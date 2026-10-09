@@ -89,13 +89,12 @@ const REFRESH_LABELS = ["Refresh pages", "Refresh snippets"];
 
 const context = fakeContext();
 
-function create(renamePages = false, renames = QualifiedNameRenames.forEntity(context), associationPlan = new AssociationRenamePlan()) {
+function create(renames = QualifiedNameRenames.forEntity(context), associationPlan = new AssociationRenamePlan()) {
   return createUpdaters(model, {
     context,
     documentNames: new DocumentNameRegistry(),
     renames,
     associationPlan,
-    options: { renamePages },
   });
 }
 
@@ -136,10 +135,6 @@ describe("createUpdaters", () => {
   it("titles the plan steps", () => {
     const titles = all().map((u) => u.title).filter((t) => t !== undefined);
     expect(titles).toEqual(["Planning microflows", "Planning nanoflows", "Planning pages", "Planning snippets", "Planning associations", "Refreshing pages", "Refreshing snippets"]);
-  });
-
-  it("ignores the deprecated renamePages option", () => {
-    expect(all(create(true)).map((u) => u.label)).toEqual(all(create(false)).map((u) => u.label));
   });
 
   it("implements the flow and page planners, every renamer and every reference updater", () => {
@@ -234,7 +229,7 @@ describe("createUpdaters", () => {
 
   it("uses the rename map it is given", async () => {
     const renames = QualifiedNameRenames.forEntity(context);
-    const groups = create(false, renames);
+    const groups = create(renames);
     renames.addDocument("MyModule", "ACT_Order", "ACT_Purchase");
     const event = { $Type: "ScheduledEvents$ScheduledEvent", microflow: "MyModule.ACT_Order" };
     await byLabel("References in scheduled events", groups).update(event as unknown as Primitives.UnitBase, fakeUnitInfo("se", "ScheduledEvents$ScheduledEvent", "MyModule"));
@@ -244,7 +239,7 @@ describe("createUpdaters", () => {
   it("plans associations last and renames them first, with the shared plans", async () => {
     const associationPlan = new AssociationRenamePlan();
     const renames = QualifiedNameRenames.forEntity(context);
-    const groups = create(false, renames, associationPlan);
+    const groups = create(renames, associationPlan);
     expect(groups.planners.at(-1)).toBeInstanceOf(AssociationUpdater);
     expect(groups.renamers[0]).toBeInstanceOf(AssociationUpdater);
     expect(byLabel("Associations (plan)", groups).access).toBe(model.domainModels);

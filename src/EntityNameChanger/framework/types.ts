@@ -52,8 +52,3 @@ export interface UnitUpdater<TUnit extends Primitives.UnitBase = Primitives.Unit
 
 // Wraps dialogs.showProgressDialog so the job can run without Studio Pro.
 export type ProgressRunner = (title: string, steps: ProgressDialogStep[]) => Promise<ProgressDialogResult>;
-
-// User choices from the pane.
-export type RenameOptions = {
-  renamePages: boolean;
-};

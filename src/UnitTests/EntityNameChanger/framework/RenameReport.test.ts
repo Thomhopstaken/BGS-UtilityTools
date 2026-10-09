@@ -22,7 +22,7 @@ describe("RenameReport", () => {
     expect(report.changedUnits).toBe(1);
     expect(report.skippedRenames).toBe(3);
     expect(report.changed).toEqual([
-      { label: "Microflows", unitId: "u1", name: "ACT_Order", result: changed({ renamedTo: "ACT_Purchase", skippedRenames: 1 }) },
+      { label: "Microflows", unitId: "u1", name: "ACT_Order", qualifiedName: "MyModule.ACT_Order", result: changed({ renamedTo: "ACT_Purchase", skippedRenames: 1 }) },
     ]);
   });
 
@@ -49,6 +49,7 @@ describe("RenameReport", () => {
     const report = new RenameReport();
     report.addResult("Microflows", { $ID: "u2", $Type: "T" } as never, changed());
     expect(report.changed[0].name).toBe("u2");
+    expect(report.changed[0].qualifiedName).toBe("u2");
   });
 
   it("records errors with their message", () => {
@@ -147,6 +148,22 @@ describe("RenameReport", () => {
       report.addResult("References in microflows", other, changed({ updatedReferences: 2 }));
       expect(report.renamedDocuments).toHaveLength(1);
       expect(report.navigationWarnings()).toEqual([]);
+      expect(report.navigationDocuments()).toEqual([]);
+    });
+
+    it("returns the renamed navigation documents as data", () => {
+      const report = new RenameReport();
+      report.addResult("Nanoflows", nanoflow, changed({ renamedTo: "NAV_Purchase" }));
+      report.addResult("Snippets", snippet, changed({ renamedTo: "Purchase_Snippet" }));
+      expect(report.navigationDocuments()).toEqual([
+        { unitType: "Microflows$Nanoflow", oldQualifiedName: "MyModule.NAV_Order", newQualifiedName: "MyModule.NAV_Purchase" },
+      ]);
+    });
+
+    it("qualifies changed units with their module", () => {
+      const report = new RenameReport();
+      report.addResult("Nanoflows", nanoflow, changed());
+      expect(report.changed[0].qualifiedName).toBe("MyModule.NAV_Order");
     });
 
     it("skips a unit without a name", () => {
