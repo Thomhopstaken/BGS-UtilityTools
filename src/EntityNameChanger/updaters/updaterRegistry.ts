@@ -6,6 +6,8 @@ import { DocumentRenamePlan } from "../framework/DocumentRenamePlan";
 import { NamingPolicy } from "../framework/NamingPolicy";
 import type { QualifiedNameRenames } from "../framework/QualifiedNameRenames";
 import type { RenameContext } from "../framework/RenameContext";
+import type { PlanObserver } from "../framework/RenameJob";
+import { ReferenceIndex } from "../framework/ReferenceIndex";
 import type { UnitAccess, UnitUpdater, UpdaterMode } from "../framework/types";
 import { FlowUpdater, type FlowUnitType, type FlowUpdaterDeps } from "./microflows/FlowUpdater";
 import { MicroflowHelper } from "./microflows/MicroflowHelper";
@@ -37,6 +39,9 @@ export type UpdaterDeps = {
   associationPlan: AssociationRenamePlan;
   // Filled by the mapping planners; read for the run log.
   messageDefinitionUsage: MessageDefinitionUsage;
+  // Whether a unit was saved in this job. Lets flows rewrite references to existing names in their rename save;
+  // without it every reference waits for the reference pass.
+  isSaved?: (unitId: string) => boolean;
 };
 
 // Document types that are never renamed, with the reason. Their references are still updated where listed
@@ -185,6 +190,8 @@ type DocumentType =
 export type UpdaterGroups = {
   // Read-only: decide document renames and record every renamed qualified name; the only phase that resolves.
   planners: UnitUpdater[];
+  // For the job: sees every unit the planners loaded (reference index, resolver cache).
+  planObserver: PlanObserver;
   // After the entity rename: rename documents, parameters and variables as planned.
   renamers: UnitUpdater[];
   // Then: rewrite references in every document, once every renamed name exists.
@@ -215,8 +222,9 @@ export function createUpdaters(model: AppModel, deps: UpdaterDeps): UpdaterGroup
       connectorTypes: model.connectorTypes,
     },
     references,
-    renames,
   );
+  // Filled from every unit the planners load; lets the reference pass skip units without a renamed name.
+  const referenceIndex = new ReferenceIndex();
   // Updaters run in sequence, so one helper serves microflows, nanoflows and rules; the same holds for pages and snippets.
   const flowDeps: FlowUpdaterDeps = {
     helper: new MicroflowHelper(context, naming, references),
@@ -224,6 +232,7 @@ export function createUpdaters(model: AppModel, deps: UpdaterDeps): UpdaterGroup
     documentNames,
     renames,
     plan,
+    references: deps.isSaved === undefined ? undefined : { isSaved: deps.isSaved, index: referenceIndex },
   };
   const pageDeps: PageUpdaterDeps = { helper: new PageHelper(context, naming), documentNames, renames, plan };
   const associationDeps: AssociationUpdaterDeps = {
@@ -387,12 +396,16 @@ export function createUpdaters(model: AppModel, deps: UpdaterDeps): UpdaterGroup
   };
 
   const planners: UnitUpdater[] = [
+    // Before the flows: their signatures are remembered from the plan, so flows calling them need no resolve().
+    // Renaming also renames the action's code file; the run log warns to check the code.
+    documents("plan", "JavaActions$JavaAction"),
+    documents("plan", "JavaScriptActions$JavaScriptAction"),
+    documents("plan", "Workflows$Workflow"),
     flows("plan", "Microflows$Microflow"),
     flows("plan", "Microflows$Nanoflow"),
     flows("plan", "Microflows$Rule"),
     pages("plan", "Pages$Page"),
     pages("plan", "Pages$Snippet"),
-    documents("plan", "Workflows$Workflow"),
     documents("plan", "ImportMappings$ImportMapping"),
     documents("plan", "ExportMappings$ExportMapping"),
     // After the mappings: a JSON structure is renamed only when an entity mapping uses it.
@@ -402,9 +415,6 @@ export function createUpdaters(model: AppModel, deps: UpdaterDeps): UpdaterGroup
     documents("plan", "DataSets$DataSet"),
     // Only the renamed view entity's own source; every query is rewritten by the reference pass.
     documents("plan", "DomainModels$ViewEntitySourceDocument"),
-    // Renaming also renames the action's code file; the run log warns to check the code.
-    documents("plan", "JavaActions$JavaAction"),
-    documents("plan", "JavaScriptActions$JavaScriptAction"),
     // After the flows and mappings: a published service uses the entity when it references a renamed document.
     documents("plan", "Rest$PublishedRestService"),
     documents("plan", "ODataPublish$PublishedODataService2"),
@@ -416,6 +426,9 @@ export function createUpdaters(model: AppModel, deps: UpdaterDeps): UpdaterGroup
   const renamers: UnitUpdater[] = [
     // Other modules' domain models; the entity's own one is renamed by the entity step.
     new AssociationUpdater("rename", domainModels, associationDeps) as unknown as UnitUpdater,
+    // Before the flows: flows calling them then rewrite those references in their own rename save.
+    documents("rename", "JavaActions$JavaAction"),
+    documents("rename", "JavaScriptActions$JavaScriptAction"),
     flows("rename", "Microflows$Microflow"),
     flows("rename", "Microflows$Nanoflow"),
     flows("rename", "Microflows$Rule"),
@@ -429,8 +442,6 @@ export function createUpdaters(model: AppModel, deps: UpdaterDeps): UpdaterGroup
     documents("rename", "MessageDefinitions$MessageDefinition2"),
     documents("rename", "DataSets$DataSet"),
     documents("rename", "DomainModels$ViewEntitySourceDocument"),
-    documents("rename", "JavaActions$JavaAction"),
-    documents("rename", "JavaScriptActions$JavaScriptAction"),
     documents("rename", "Rest$PublishedRestService"),
     documents("rename", "ODataPublish$PublishedODataService2"),
     documents("rename", "WebServices$PublishedWebService"),
@@ -442,14 +453,28 @@ export function createUpdaters(model: AppModel, deps: UpdaterDeps): UpdaterGroup
         { documents: type.documents, unitType: type.unitType, onlyProperties: type.onlyProperties },
         model[type.api] as unknown as UnitAccess<Primitives.UnitBase>,
         renames,
+        referenceIndex,
       ),
   );
 
+  // Every unit a planner loaded: its references are indexed and its signature remembered for callers.
+  const planObserver: PlanObserver = (unit, info) => {
+    referenceIndex.add(unit.$ID, unit);
+    resolver.remember(unit, info);
+  };
+
+  // Only changed pages and snippets calling a document with renamed parameters.
+  const refreshFilter = { index: referenceIndex, renames };
   const refreshers: UnitUpdater[] = [
-    new RefreshUpdater({ documents: "pages", unitType: "Pages$Page" }, model.pages as unknown as UnitAccess<Primitives.UnitBase>),
+    new RefreshUpdater(
+      { documents: "pages", unitType: "Pages$Page" },
+      model.pages as unknown as UnitAccess<Primitives.UnitBase>,
+      refreshFilter,
+    ),
     new RefreshUpdater(
       { documents: "snippets", unitType: "Pages$Snippet" },
       model.snippets as unknown as UnitAccess<Primitives.UnitBase>,
+      refreshFilter,
     ),
   ];
 
@@ -457,5 +482,5 @@ export function createUpdaters(model: AppModel, deps: UpdaterDeps): UpdaterGroup
   console.info(
     `updaters: ${all.map((u) => `${u.label}${u.implemented ? "" : " (stub)"}`).join(", ")}; excluded: ${EXCLUDED_DOCUMENT_TYPES.map((e) => e.label).join(", ")}`,
   );
-  return { planners, renamers, referenceUpdaters, refreshers };
+  return { planners, planObserver, renamers, referenceUpdaters, refreshers };
 }

@@ -1,7 +1,6 @@
 import type { DomainModels, Primitives } from "@mendix/extensions-api";
 import { describe, expect, it } from "vitest";
 import { fakeResolveAccess, fakeUnitInfo } from "../../helpers/fakes";
-import { QualifiedNameRenames } from "../../../../EntityNameChanger/framework/QualifiedNameRenames";
 import { emptyFlowReferences, ReferenceCache } from "../../../../EntityNameChanger/updaters/microflows/ReferenceCache";
 import { type DomainModelLookup, loadAssociationEnds, ReferenceResolver } from "../../../../EntityNameChanger/updaters/microflows/ReferenceResolver";
 
@@ -27,7 +26,7 @@ function fakeDomainModels(elements: Record<string, unknown>, models: { id: strin
 }
 
 function setup(
-  options: { domainModels?: ReturnType<typeof fakeDomainModels>; elements?: Record<string, unknown>; renames?: QualifiedNameRenames } = {},
+  options: { domainModels?: ReturnType<typeof fakeDomainModels>; elements?: Record<string, unknown> } = {},
 ) {
   const elements = options.elements ?? {};
   const apis = {
@@ -44,7 +43,7 @@ function setup(
     connectorTypes: fakeResolveAccess(elements),
   };
   const cache = new ReferenceCache();
-  return { apis, cache, resolver: new ReferenceResolver(apis, cache, options.renames ?? new QualifiedNameRenames()) };
+  return { apis, cache, resolver: new ReferenceResolver(apis, cache) };
 }
 
 describe("ReferenceResolver", () => {
@@ -82,25 +81,67 @@ describe("ReferenceResolver", () => {
     ]);
   });
 
-  it("resolves flows renamed earlier in the job by their new name, cached under the old one", async () => {
-    const renames = new QualifiedNameRenames();
-    renames.addDocument("M", "GET_Order", "GET_Purchase");
-    renames.addDocument("M", "NF_Order", "NF_Purchase");
+  // Regression: resolving runs before anything is renamed, so a flow planned for a rename is found by its old name.
+  it("resolves flows by the name the caller writes", async () => {
     const { apis, cache, resolver } = setup({
-      renames,
       elements: {
-        "Microflows$Microflow:M.GET_Purchase": { microflowReturnType: { $Type: "DataTypes$ObjectType", entity: "M.Order" } },
-        "Microflows$Nanoflow:M.NF_Purchase": { microflowReturnType: { $Type: "DataTypes$ObjectType", entity: "M.Order" } },
+        "Microflows$Microflow:M.GET_Order": { microflowReturnType: { $Type: "DataTypes$ObjectType", entity: "M.Order" } },
+        "Microflows$Nanoflow:M.NF_Order": { microflowReturnType: { $Type: "DataTypes$ObjectType", entity: "M.Order" } },
       },
     });
     const refs = emptyFlowReferences();
     refs.microflows.add("M.GET_Order");
     refs.nanoflows.add("M.NF_Order");
     await resolver.resolveAll(refs);
-    expect(apis.microflows.calls.map((c) => c.qualifiedName)).toEqual(["M.GET_Purchase"]);
-    expect(apis.nanoflows.calls.map((c) => c.qualifiedName)).toEqual(["M.NF_Purchase"]);
+    expect(apis.microflows.calls.map((c) => c.qualifiedName)).toEqual(["M.GET_Order"]);
+    expect(apis.nanoflows.calls.map((c) => c.qualifiedName)).toEqual(["M.NF_Order"]);
     expect(cache.microflowReturnEntities.get("M.GET_Order")).toBe("M.Order");
     expect(cache.nanoflowReturnEntities.get("M.NF_Order")).toBe("M.Order");
+  });
+
+  it("remembers flows, actions and workflows loaded in the plan, so callers need no resolve", async () => {
+    const { apis, cache, resolver } = setup();
+    const info = (type: string, name: string) => fakeUnitInfo(name, type, "M", name);
+    resolver.remember(
+      { $ID: "mf", $Type: "Microflows$Microflow", microflowReturnType: { $Type: "DataTypes$ListType", entity: "M.Order" } } as never,
+      info("Microflows$Microflow", "GET_Orders"),
+    );
+    resolver.remember(
+      { $ID: "nf", $Type: "Microflows$Nanoflow", microflowReturnType: { $Type: "DataTypes$VoidType" } } as never,
+      info("Microflows$Nanoflow", "NF_Void"),
+    );
+    resolver.remember(
+      { $ID: "ja", $Type: "JavaActions$JavaAction", actionReturnType: { $Type: "CodeActions$ConcreteEntityType", entity: "M.Order" }, actionParameters: [] } as never,
+      info("JavaActions$JavaAction", "JA_Get"),
+    );
+    resolver.remember(
+      { $ID: "js", $Type: "JavaScriptActions$JavaScriptAction", actionReturnType: { $Type: "CodeActions$VoidType" }, actionParameters: [] } as never,
+      info("JavaScriptActions$JavaScriptAction", "JS_Do"),
+    );
+    resolver.remember({ $ID: "wf", $Type: "Workflows$Workflow", parameter: { entity: "M.Order" } } as never, info("Workflows$Workflow", "WF_Order"));
+    resolver.remember({ $ID: "p", $Type: "Pages$Page" } as never, info("Pages$Page", "Page"));
+    const refs = emptyFlowReferences();
+    refs.microflows.add("M.GET_Orders");
+    refs.nanoflows.add("M.NF_Void");
+    refs.javaActions.add("M.JA_Get");
+    refs.javaScriptActions.add("M.JS_Do");
+    refs.workflows.add("M.WF_Order");
+    await resolver.resolveAll(refs);
+    expect([apis.microflows, apis.nanoflows, apis.javaActions, apis.javaScriptActions, apis.workflows].map((a) => a.calls.length)).toEqual([0, 0, 0, 0, 0]);
+    expect(cache.microflowReturnEntities.get("M.GET_Orders")).toBe("M.Order");
+    expect(cache.nanoflowReturnEntities.get("M.NF_Void")).toBeNull();
+    expect(cache.javaActions.get("M.JA_Get")?.returnEntity).toBe("M.Order");
+    expect(cache.javaScriptActions.get("M.JS_Do")?.returnEntity).toBeNull();
+    expect(cache.workflowContextEntities.get("M.WF_Order")).toBe("M.Order");
+  });
+
+  it("never overwrites a cached value and skips units without a module", () => {
+    const { cache, resolver } = setup();
+    cache.microflowReturnEntities.set("M.GET", "M.Resolved");
+    const flow = { $ID: "mf", $Type: "Microflows$Microflow", microflowReturnType: { $Type: "DataTypes$ObjectType", entity: "M.Other" } } as never;
+    resolver.remember(flow, fakeUnitInfo("mf", "Microflows$Microflow", "M", "GET"));
+    resolver.remember(flow, { $ID: "x", $Type: "Microflows$Microflow", name: "NoModule" } as never);
+    expect([...cache.microflowReturnEntities]).toEqual([["M.GET", "M.Resolved"]]);
   });
 
   it("stores JavaScript action signatures", async () => {

@@ -59,6 +59,36 @@ const doc = (name: string, value?: string): Doc => ({ $ID: "wf-1", $Type: "Workf
 const info = (name: string) => fakeUnitInfo("wf-1", "Workflows$Workflow", "MyModule", name);
 const parameterRename: LocalRenames = { renames: new Map([["Order", "Purchase"]]), referencedByCallers: true };
 
+describe("DocumentUpdater work and metadata planning", () => {
+  const planned = async (inspector: DocumentInspector<Doc>, name = "WF_Customer") => {
+    const { planner, renamer } = setup(inspector, ["WF_Order", "WF_Purchase"]);
+    await planner.update(doc(name), info(name));
+    return renamer.accepts(info(name));
+  };
+
+  it("lets the rename phase load only documents with planned work", async () => {
+    expect(await planned(fakeInspector(false))).toBe(false);
+    expect(await planned(fakeInspector(true, parameterRename))).toBe(true);
+    expect(await planned(fakeInspector(true, { renames: new Map(), referencedByCallers: false, skipped: 1 }))).toBe(true);
+    expect(await planned({ ...fakeInspector(false), changesBeyondRenames: () => true })).toBe(true);
+    expect(await planned({ ...fakeInspector(false), changesBeyondRenames: () => false })).toBe(false);
+    // A skipped document rename (WF_Purchase exists) is reported by the rename phase.
+    expect(await planned(fakeInspector(true), "WF_Order")).toBe(true);
+  });
+
+  it("plans from metadata when the inspector needs no content; only planners", async () => {
+    const inspector = { ...fakeInspector(true), plansFromInfo: true };
+    const { planner, renamer, deps } = setup(inspector, ["WF_Order"]);
+    expect(renamer.updateFromInfo).toBeUndefined();
+    expect(setup(fakeInspector(true)).planner.updateFromInfo).toBeUndefined();
+    expect(planner.updateFromInfo?.(info("WF_Order"))).toEqual(UNCHANGED);
+    expect(inspector.usesEntity).toHaveBeenCalledWith({ name: "WF_Order" }, info("WF_Order"));
+    expect(deps.plan.get("wf-1")).toEqual({ renamedTo: "WF_Purchase", skipped: 0 });
+    expect(deps.plan.unitIdOf("MyModule.WF_Order")).toBe("wf-1");
+    expect(renamer.accepts(info("WF_Order"))).toBe(true);
+  });
+});
+
 describe("DocumentUpdater", () => {
   it("has the spec metadata", () => {
     const { planner } = setup(fakeInspector(true));
@@ -76,6 +106,7 @@ describe("DocumentUpdater", () => {
     expect(deps.renames.map.get("MyModule.WF_Order")).toBe("MyModule.WF_Purchase");
     expect(deps.renames.map.get("MyModule.WF_Order.Order")).toBe("MyModule.WF_Purchase.Purchase");
     expect(deps.documentNames.isFree("MyModule", "WF_Purchase")).toBe(false);
+    expect([...deps.renames.existing((id) => id === "wf-1").keys()]).toEqual(["MyModule.WF_Order", "MyModule.WF_Order.Order"]);
   });
 
   it("does not record local renames that callers don't reference", async () => {

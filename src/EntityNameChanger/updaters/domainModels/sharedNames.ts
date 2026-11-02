@@ -58,7 +58,7 @@ function forceDocumentRename(input: SharedNameInput, unitId: string, target: str
   const { moduleName, name } = input;
   input.documentNames.register(moduleName, name, target);
   input.documentPlan.set(unitId, { renamedTo: target, skipped: 0 }, `${moduleName}.${name}`);
-  input.renames.addDocument(moduleName, name, target);
+  input.renames.addDocument(moduleName, name, target, unitId);
   input.renames.retargetDocument(moduleName, name, name, target);
   console.info(`document ${moduleName}.${name} renamed to ${target} along with the association`);
 }

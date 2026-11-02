@@ -1,9 +1,97 @@
 import { describe, expect, it } from "vitest";
 import {
+  findReferencedName,
+  findReferencedNameInUnit,
+  qualifiedNamePrefix,
+  qualifiedNamePrefixes,
   referencesQualifiedName,
   rewriteQualifiedNames,
   rewriteQualifiedNamesInUnit,
 } from "../../../../EntityNameChanger/updaters/shared/qualifiedNameRewrite";
+
+describe("findReferencedNameInUnit", () => {
+  const names = new Map([["MyModule.ACT_Get", "MyModule.ACT_Fetch"]]);
+
+  it("finds a referenced name in any element string or string array, as the rewrite sees them", () => {
+    const unit = { $Type: "Microflows$Microflow", objects: [{ $Type: "Microflows$ActionActivity", tags: ["x", "MyModule.ACT_Get"] }] };
+    expect(findReferencedNameInUnit(unit, names)).toBe("MyModule.ACT_Get");
+  });
+
+  it("returns null for literals, $-keys and objects without a $Type", () => {
+    const unit = { $Type: "Microflows$Microflow", $ID: "MyModule.ACT_Get", note: "'MyModule.ACT_Get'", plain: { value: "MyModule.ACT_Get" } };
+    expect(findReferencedNameInUnit(unit, names)).toBeNull();
+  });
+});
+
+describe("findReferencedName", () => {
+  const names = new Set(["MyModule.Order", "MyModule.ACT_Get.Order"]);
+
+  it("finds a name, a member of it, or a renamed parameter", () => {
+    expect(findReferencedName("MyModule.Order", names)).toBe("MyModule.Order");
+    expect(findReferencedName("$x/MyModule.Order/Total", names)).toBe("MyModule.Order");
+    expect(findReferencedName("MyModule.Order.Total", names)).toBe("MyModule.Order");
+    expect(findReferencedName("MyModule.ACT_Get.Order", names)).toBe("MyModule.ACT_Get.Order");
+  });
+
+  it("ignores other names, literals and text without a dot", () => {
+    expect(findReferencedName("MyModule.OrderLine", names)).toBeNull();
+    expect(findReferencedName("'MyModule.Order'", names)).toBeNull();
+    expect(findReferencedName("MyModule.ACT_Get.Other", names)).toBeNull();
+    expect(findReferencedName("Order", names)).toBeNull();
+  });
+
+  it("agrees with referencesQualifiedName", () => {
+    const values = ["MyModule.Order", "MyModule.OrderLine", "x MyModule.Order.A y", "'MyModule.Order'", "MyModule.ACT_Get.Order.X"];
+    for (const value of values) {
+      const expected = [...names].some((qname) => referencesQualifiedName(value, qname));
+      expect(findReferencedName(value, names) !== null).toBe(expected);
+    }
+  });
+});
+
+describe("qualifiedNamePrefix", () => {
+  it("keeps the first two segments", () => {
+    expect(qualifiedNamePrefix("M.Doc.Param.X")).toBe("M.Doc");
+    expect(qualifiedNamePrefix("M.Doc")).toBe("M.Doc");
+    expect(qualifiedNamePrefix("Single")).toBe("Single");
+  });
+});
+
+describe("qualifiedNamePrefixes", () => {
+  it("collects the prefixes of every dotted name in every element, arrays included, outside literals", () => {
+    const unit = {
+      $Type: "Pages$Page",
+      $ID: "M.Ignored",
+      name: "Page",
+      widgets: [
+        { $Type: "Pages$DataView", entity: "M.Order", xPath: "[M.Order_Customer = $x] and Name = 'Lit.Eral'" },
+        { $Type: "Pages$Button", targets: ["M.ACT_Get.Param", "plain"] },
+      ],
+      plain: { notAnElement: "Skipped.Name" },
+    };
+    expect([...qualifiedNamePrefixes(unit)].sort()).toEqual(["M.ACT_Get", "M.Order", "M.Order_Customer"]);
+  });
+
+  it("covers every unit the rewrite changes", () => {
+    const renames = new Map([
+      ["M.Order", "M.Purchase"],
+      ["M.ACT_Get.Order", "M.ACT_Get.Purchase"],
+    ]);
+    const keyPrefixes = new Set([...renames.keys()].map(qualifiedNamePrefix));
+    const units = [
+      { $Type: "X$A", value: "$o/M.Order_Customer" },
+      { $Type: "X$A", value: "M.Order.Total" },
+      { $Type: "X$A", items: ["M.ACT_Get.Order"] },
+      { $Type: "X$A", value: "'M.Order'" },
+      { $Type: "X$A", value: "M.OrderLine" },
+    ];
+    for (const unit of units) {
+      const indexed = [...qualifiedNamePrefixes(unit)].some((prefix) => keyPrefixes.has(prefix));
+      const changed = rewriteQualifiedNamesInUnit(structuredClone(unit), renames) > 0;
+      expect(changed && !indexed).toBe(false);
+    }
+  });
+});
 
 describe("referencesQualifiedName", () => {
   it.each([

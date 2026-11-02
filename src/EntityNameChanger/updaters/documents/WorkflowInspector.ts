@@ -26,6 +26,11 @@ export class WorkflowInspector implements DocumentInspector<Workflows.Workflow> 
     return isEntityQname(workflowContextEntity(workflow), this.context);
   }
 
+  // apply also renames the entity name in display texts of a workflow of the entity.
+  changesBeyondRenames(workflow: Workflows.Workflow): boolean {
+    return this.usesEntity(workflow);
+  }
+
   // UNVERIFIED: whether Studio Pro allows renaming the parameter (default WorkflowContext).
   planLocalRenames(workflow: Workflows.Workflow): LocalRenames {
     const parameter = workflow.parameter;

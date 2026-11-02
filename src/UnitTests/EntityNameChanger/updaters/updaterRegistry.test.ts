@@ -4,6 +4,8 @@ import { AssociationRenamePlan } from "../../../EntityNameChanger/framework/Asso
 import { DocumentNameRegistry } from "../../../EntityNameChanger/framework/DocumentNameRegistry";
 import { MessageDefinitionUsage } from "../../../EntityNameChanger/framework/MessageDefinitionUsage";
 import { QualifiedNameRenames } from "../../../EntityNameChanger/framework/QualifiedNameRenames";
+import { RenameReport } from "../../../EntityNameChanger/framework/RenameReport";
+import { UNCHANGED } from "../../../EntityNameChanger/framework/types";
 import { fakeContext, fakeUnitInfo } from "../helpers/fakes";
 import { AssociationUpdater } from "../../../EntityNameChanger/updaters/domainModels/AssociationUpdater";
 import { DocumentUpdater } from "../../../EntityNameChanger/updaters/documents/DocumentUpdater";
@@ -55,12 +57,14 @@ const API_NAMES = [
 const model = Object.fromEntries(API_NAMES.map((name) => [name, { api: name }])) as unknown as AppModel;
 
 const PLAN_LABELS = [
+  "Java actions (plan)",
+  "JavaScript actions (plan)",
+  "Workflows (plan)",
   "Microflows (plan)",
   "Nanoflows (plan)",
   "Rules (plan)",
   "Pages (plan)",
   "Snippets (plan)",
-  "Workflows (plan)",
   "Import mappings (plan)",
   "Export mappings (plan)",
   "JSON structures (plan)",
@@ -68,8 +72,6 @@ const PLAN_LABELS = [
   "Message definition documents (plan)",
   "Datasets (plan)",
   "View entity source documents (plan)",
-  "Java actions (plan)",
-  "JavaScript actions (plan)",
   "Published REST services (plan)",
   "Published OData services (plan)",
   "Published web services (plan)",
@@ -78,6 +80,8 @@ const PLAN_LABELS = [
 
 const RENAME_LABELS = [
   "Associations",
+  "Java actions",
+  "JavaScript actions",
   "Microflows",
   "Nanoflows",
   "Rules",
@@ -91,8 +95,6 @@ const RENAME_LABELS = [
   "Message definition documents",
   "Datasets",
   "View entity source documents",
-  "Java actions",
-  "JavaScript actions",
   "Published REST services",
   "Published OData services",
   "Published web services",
@@ -185,12 +187,14 @@ describe("createUpdaters", () => {
   it("titles the plan steps", () => {
     const titles = all().map((u) => u.title).filter((t) => t !== undefined);
     expect(titles).toEqual([
+      "Planning Java actions",
+      "Planning JavaScript actions",
+      "Planning workflows",
       "Planning microflows",
       "Planning nanoflows",
       "Planning rules",
       "Planning pages",
       "Planning snippets",
-      "Planning workflows",
       "Planning import mappings",
       "Planning export mappings",
       "Planning JSON structures",
@@ -198,8 +202,6 @@ describe("createUpdaters", () => {
       "Planning message definition documents",
       "Planning datasets",
       "Planning view entity source documents",
-      "Planning Java actions",
-      "Planning JavaScript actions",
       "Planning published REST services",
       "Planning published OData services",
       "Planning published web services",
@@ -211,6 +213,83 @@ describe("createUpdaters", () => {
 
   it("implements every updater; no stubs are left", () => {
     expect(all().filter((u) => u.implemented).map((u) => u.label)).toEqual([...PLAN_LABELS, ...RENAME_LABELS, ...REFERENCE_LABELS, ...REFRESH_LABELS]);
+  });
+
+  it("plans the signatures flows depend on before the flows", () => {
+    const labels = create().planners.map((u) => u.label);
+    for (const label of ["Java actions (plan)", "JavaScript actions (plan)", "Workflows (plan)"]) {
+      expect(labels.indexOf(label)).toBeLessThan(labels.indexOf("Microflows (plan)"));
+    }
+  });
+
+  it("plans JSON structures and view entity sources from metadata, loading nothing", () => {
+    const planners = create().planners;
+    const fromInfo = planners.filter((u) => u.updateFromInfo !== undefined).map((u) => u.label);
+    expect(fromInfo).toEqual(["JSON structures (plan)", "View entity source documents (plan)"]);
+  });
+
+  it("indexes and remembers every planned unit, so the reference pass skips unrelated ones", async () => {
+    const groups = create();
+    const unrelated = { $ID: "mf-unrelated", $Type: "Microflows$Microflow", objectCollection: { objects: [] }, name: "ACT_Other", note: "MyModule.Customer" };
+    const using = { $ID: "mf-using", $Type: "Microflows$Microflow", objectCollection: { objects: [] }, name: "ACT_Use", note: "MyModule.Order" };
+    groups.planObserver(unrelated as unknown as Primitives.UnitBase, fakeUnitInfo("mf-unrelated", "Microflows$Microflow", "MyModule", "ACT_Other"));
+    groups.planObserver(using as unknown as Primitives.UnitBase, fakeUnitInfo("mf-using", "Microflows$Microflow", "MyModule", "ACT_Use"));
+    const references = byLabel("References in microflows", groups);
+    expect(references.accepts?.(fakeUnitInfo("mf-unrelated", "Microflows$Microflow"), new RenameReport())).toBe(false);
+    expect(references.accepts?.(fakeUnitInfo("mf-using", "Microflows$Microflow"), new RenameReport())).toBe(true);
+    expect(references.accepts?.(fakeUnitInfo("mf-never-planned", "Microflows$Microflow"), new RenameReport())).toBe(true);
+  });
+
+  it("renames Java and JavaScript actions before the flows", () => {
+    const labels = create().renamers.map((u) => u.label);
+    for (const label of ["Java actions", "JavaScript actions"]) {
+      expect(labels.indexOf(label)).toBeLessThan(labels.indexOf("Microflows"));
+    }
+  });
+
+  it("with isSaved, flows rewrite references to existing names in their rename save, and the reference pass skips them", async () => {
+    const withSaved = (isSaved: (id: string) => boolean) =>
+      createUpdaters(model, {
+        context,
+        documentNames: new DocumentNameRegistry(),
+        renames: QualifiedNameRenames.forEntity(context),
+        associationPlan: new AssociationRenamePlan(),
+        messageDefinitionUsage: new MessageDefinitionUsage(),
+        isSaved,
+      });
+    const info = fakeUnitInfo("mf-1", "Microflows$Microflow", "MyModule", "ACT_Use");
+    const run = async (groups: ReturnType<typeof create>) => {
+      const flow = { ...flowWithOrderParameter("ACT_Use"), $ID: "mf-1", documentation: "See MyModule.Order" } as Primitives.UnitBase & { documentation: string };
+      groups.planObserver(flow, info);
+      const result = await byLabel("Microflows", groups).update(flow, info);
+      const report = new RenameReport();
+      report.addResult("Microflows", info, result);
+      return { flow, result, accepted: byLabel("References in microflows", groups).accepts?.(info, report) };
+    };
+    // The entity's domain model was saved by the entity step.
+    const saved = await run(withSaved((id) => id === context.domainModelId));
+    expect(saved.flow.documentation).toBe("See MyModule.Purchase");
+    expect(saved.result.updatedReferences).toBeGreaterThan(0);
+    expect(saved.accepted).toBe(false);
+    const notSaved = await run(withSaved(() => false));
+    expect(notSaved.flow.documentation).toBe("See MyModule.Order");
+    expect(notSaved.result.updatedReferences).toBe(0);
+    expect(notSaved.accepted).toBe(true);
+  });
+
+  it("refreshes only changed pages that call a document with renamed parameters", () => {
+    const renames = QualifiedNameRenames.forEntity(context);
+    renames.addParameter("MyModule", "ACT_Save", "ACT_Save", "Order", "Purchase", "mf-1");
+    const groups = create(renames);
+    const page = (id: string, text: string) => ({ $ID: id, $Type: "Pages$Page", name: id, title: text }) as unknown as Primitives.UnitBase;
+    groups.planObserver(page("p-calls", "MyModule.ACT_Save.Order"), fakeUnitInfo("p-calls", "Pages$Page", "MyModule", "p-calls"));
+    groups.planObserver(page("p-entity", "MyModule.Order"), fakeUnitInfo("p-entity", "Pages$Page", "MyModule", "p-entity"));
+    const report = new RenameReport();
+    for (const id of ["p-calls", "p-entity"]) {
+      report.addResult("References in pages", fakeUnitInfo(id, "Pages$Page", "MyModule", id), { ...UNCHANGED, changed: true, updatedReferences: 1 });
+    }
+    const refresh = byLabel("Refresh pages", groups);
+    expect(["p-calls", "p-entity"].map((id) => refresh.accepts?.(fakeUnitInfo(id, "Pages$Page"), report))).toEqual([true, false]);
   });
 
   it("passes the matching model api and unit type to the flow and page updaters", () => {

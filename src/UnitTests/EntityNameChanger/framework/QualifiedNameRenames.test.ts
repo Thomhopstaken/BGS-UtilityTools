@@ -75,10 +75,58 @@ describe("QualifiedNameRenames", () => {
     expect(renames.size).toBe(0);
   });
 
-  it("returns the current name of a renamed document, other names unchanged", () => {
+  it("lists the Module.Name prefix of every key, cached until a change", () => {
     const renames = new QualifiedNameRenames();
     renames.addDocument("M", "ACT_Order", "ACT_Purchase");
-    expect(renames.current("M.ACT_Order")).toBe("M.ACT_Purchase");
-    expect(renames.current("M.ACT_Customer")).toBe("M.ACT_Customer");
+    renames.addParameter("M", "ACT_Order", "ACT_Purchase", "Order", "Purchase");
+    renames.addParameter("N", "Page", "Page", "Order", "Purchase");
+    const prefixes = renames.prefixes();
+    expect([...prefixes].sort()).toEqual(["M.ACT_Order", "N.Page"]);
+    expect(renames.prefixes()).toBe(prefixes);
+    renames.addAssociation("M", "Order_Customer", "Purchase_Customer");
+    expect([...renames.prefixes()].sort()).toEqual(["M.ACT_Order", "M.Order_Customer", "N.Page"]);
+    renames.remove("M.Order_Customer");
+    expect([...renames.prefixes()].sort()).toEqual(["M.ACT_Order", "N.Page"]);
+  });
+
+  it("lists the documents whose parameters were renamed", () => {
+    const renames = new QualifiedNameRenames();
+    renames.add("M.Order", "M.Purchase");
+    renames.addDocument("M", "ACT_Order", "ACT_Purchase");
+    renames.addParameter("M", "ACT_Order", "ACT_Purchase", "Order", "Purchase");
+    renames.addParameter("N", "Page", "Page", "Order", "Purchase");
+    expect([...renames.parameterOwnerPrefixes()].sort()).toEqual(["M.ACT_Order", "N.Page"]);
+  });
+
+  it("lists as existing only renames whose declaring units were all saved", () => {
+    const renames = QualifiedNameRenames.forEntity(fakeContext());
+    renames.addDocument("MyModule", "ACT_Order", "ACT_Purchase", "mf-1");
+    renames.addParameter("MyModule", "ACT_Order", "ACT_Purchase", "Order", "Purchase", "mf-1");
+    renames.addAssociation("MyModule", "Order_Customer", "Purchase_Customer", "dm-2");
+    // A document sharing the association's name.
+    renames.addDocument("MyModule", "Order_Customer", "Purchase_Customer", "mf-2");
+    renames.add("MyModule.Unknown", "MyModule.Known");
+    const saved = new Set(["dm-1", "dm-2"]);
+    expect([...renames.existing((id) => saved.has(id))]).toEqual([["MyModule.Order", "MyModule.Purchase"]]);
+    saved.add("mf-2");
+    expect([...renames.existing((id) => saved.has(id)).keys()]).toEqual(["MyModule.Order", "MyModule.Order_Customer"]);
+    saved.add("mf-1");
+    expect(renames.existing((id) => saved.has(id)).size).toBe(4);
+  });
+
+  it("forgets the declaring units of a removed rename", () => {
+    const renames = new QualifiedNameRenames();
+    renames.addDocument("M", "Order_Customer", "Purchase_Customer", "mf-1");
+    renames.remove("M.Order_Customer");
+    renames.add("M.Order_Customer", "M.Purchase_Customer", "dm-1");
+    expect(renames.existing((id) => id === "dm-1").size).toBe(1);
+  });
+
+  it("updates the prefixes when retargeting drops a key", () => {
+    const renames = new QualifiedNameRenames();
+    renames.add("M.Doc.P", "M.Other.P");
+    expect([...renames.prefixes()]).toEqual(["M.Doc"]);
+    renames.retargetDocument("M", "Doc", "Other", "Doc");
+    expect([...renames.prefixes()]).toEqual([]);
   });
 });

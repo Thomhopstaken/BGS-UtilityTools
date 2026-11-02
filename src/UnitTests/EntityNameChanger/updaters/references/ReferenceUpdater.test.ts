@@ -1,6 +1,8 @@
 import type { Primitives } from "@mendix/extensions-api";
 import { describe, expect, it } from "vitest";
 import { QualifiedNameRenames } from "../../../../EntityNameChanger/framework/QualifiedNameRenames";
+import { ReferenceIndex } from "../../../../EntityNameChanger/framework/ReferenceIndex";
+import { RenameReport } from "../../../../EntityNameChanger/framework/RenameReport";
 import { UNCHANGED } from "../../../../EntityNameChanger/framework/types";
 import { ReferenceUpdater } from "../../../../EntityNameChanger/updaters/references/ReferenceUpdater";
 import { fakeUnitAccess, fakeUnitInfo } from "../../helpers/fakes";
@@ -29,6 +31,39 @@ describe("ReferenceUpdater with onlyProperties", () => {
     expect(await updater.update(unit, fakeUnitInfo("c1", "Rest$ConsumedRestService", "MyModule", "CRS"))).toEqual({ ...UNCHANGED, changed: true, updatedReferences: 1 });
     expect(element).toMatchObject({ entity: "MyModule.Purchase", documentation: "MyModule.Order" });
     expect(updater.onlyProperties).toEqual(new Set(["entity"]));
+  });
+});
+
+describe("ReferenceUpdater.accepts", () => {
+  it("accepts every unit without an index", () => {
+    expect(setup().updater.accepts(info)).toBe(true);
+  });
+
+  it("accepts indexed units only when they reference a renamed name; others always", () => {
+    const renames = new QualifiedNameRenames();
+    renames.add("MyModule.Order", "MyModule.Purchase");
+    const index = new ReferenceIndex();
+    index.add("uses", { $Type: "Pages$Page", entity: "MyModule.Order" });
+    index.add("unrelated", { $Type: "Pages$Page", entity: "MyModule.Customer" });
+    const updater = new ReferenceUpdater({ documents: "pages", unitType: "Pages$Page" }, fakeUnitAccess<Primitives.UnitBase>([]), renames, index);
+    const of = (id: string) => fakeUnitInfo(id, "Pages$Page");
+    expect(["uses", "unrelated", "not-indexed"].map((id) => updater.accepts(of(id)))).toEqual([true, false, true]);
+  });
+
+  it("skips a unit saved up to date in the rename phase, but not one whose save failed", () => {
+    const renames = new QualifiedNameRenames();
+    renames.add("MyModule.Order", "MyModule.Purchase");
+    const index = new ReferenceIndex();
+    index.add("saved", { $Type: "Microflows$Microflow", entity: "MyModule.Order" });
+    index.add("failed", { $Type: "Microflows$Microflow", entity: "MyModule.Order" });
+    index.markUpToDate("saved");
+    index.markUpToDate("failed");
+    const updater = new ReferenceUpdater({ documents: "microflows", unitType: "Microflows$Microflow" }, fakeUnitAccess<Primitives.UnitBase>([]), renames, index);
+    const report = new RenameReport();
+    report.addResult("Microflows", fakeUnitInfo("saved", "Microflows$Microflow"), { ...UNCHANGED, changed: true, updatedReferences: 1 });
+    report.addError("Microflows", fakeUnitInfo("failed", "Microflows$Microflow"), "locked");
+    expect(updater.accepts(fakeUnitInfo("saved", "Microflows$Microflow"), report)).toBe(false);
+    expect(updater.accepts(fakeUnitInfo("failed", "Microflows$Microflow"), report)).toBe(true);
   });
 });
 

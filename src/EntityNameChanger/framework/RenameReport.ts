@@ -1,4 +1,5 @@
 import type { Primitives } from "@mendix/extensions-api";
+import { JobTimings } from "./JobTimings";
 import { MessageDefinitionUsage } from "./MessageDefinitionUsage";
 import type { UnitUpdateResult } from "./types";
 
@@ -68,6 +69,8 @@ export class RenameReport {
   documentTemplates: number | null = 0;
   // Filled by the mapping planners.
   readonly messageDefinitionUsage = new MessageDefinitionUsage();
+  // Filled by the job and the instrumented model.
+  readonly timings = new JobTimings();
 
   get checkedUnits(): number {
     return this.checkedIds.size;

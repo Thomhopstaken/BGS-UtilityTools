@@ -51,6 +51,11 @@ export class PageUpdater<TUnit extends PageDocument> implements UnitUpdater<TUni
     this.deps = deps;
   }
 
+  // Rename phase: only documents the plan found work for are loaded.
+  accepts(info: Readonly<Primitives.UnitInfo>): boolean {
+    return this.mode === "plan" || this.deps.plan.needsRename(info.$ID);
+  }
+
   async update(doc: TUnit, info: Readonly<Primitives.UnitInfo>): Promise<UnitUpdateResult> {
     const helper = this.deps.helper;
     console.debug(`${this.mode}: checking ${this.kind} ${info.moduleName}.${doc.name}`);
@@ -71,6 +76,10 @@ export class PageUpdater<TUnit extends PageDocument> implements UnitUpdater<TUni
       helper.shouldRenameDocument(doc),
     );
     this.deps.plan.set(info.$ID, document, qualifiedName(info.moduleName, doc.name));
+    // Skipped renames count as work: the rename phase reports them.
+    if (helper.renames.size > 0 || helper.skippedRenames > 0) {
+      this.deps.plan.markWork(info.$ID);
+    }
     this.recordRenames(info, doc.name, document.renamedTo);
     console.info(
       `planned ${this.kind} ${info.moduleName}.${doc.name}: renamedTo=${document.renamedTo}, ${helper.renames.size} parameter renames`,
@@ -114,10 +123,10 @@ export class PageUpdater<TUnit extends PageDocument> implements UnitUpdater<TUni
       return;
     }
     if (renamedTo !== null) {
-      this.deps.renames.addDocument(moduleName, oldName, renamedTo);
+      this.deps.renames.addDocument(moduleName, oldName, renamedTo, info.$ID);
     }
     for (const [oldParameter, newParameter] of this.deps.helper.renames) {
-      this.deps.renames.addParameter(moduleName, oldName, renamedTo ?? oldName, oldParameter, newParameter);
+      this.deps.renames.addParameter(moduleName, oldName, renamedTo ?? oldName, oldParameter, newParameter, info.$ID);
     }
   }
 }

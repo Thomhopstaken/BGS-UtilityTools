@@ -1,5 +1,5 @@
 import type { Status } from "../shared/design/status";
-import { allEntityNames, type EntityOption } from "./entityPicker";
+import { allEntityNames, type EntityOption, withRenamedEntity } from "./entityPicker";
 import type { RenameRequest, RenameRunResult, RenameServiceDeps } from "./renameService";
 import { buildRunLog, type RowTarget, runLogMeta, type RunLog } from "./ui/runLog";
 import { type PaneField, validateRequest } from "./validation";
@@ -165,7 +165,7 @@ export class EntityNameChangerPane {
       this.view.showRunLog(log, runLogMeta(started, this.now()));
       if (result.report.entityRenamed) {
         this.view.clearNameInput();
-        await this.reload();
+        this.afterRename(entity.id, newName);
       }
     } catch (error: unknown) {
       console.info(`pane: rename failed: ${error}`);
@@ -176,15 +176,11 @@ export class EntityNameChangerPane {
     }
   }
 
-  // After a rename: fresh names, module and entity pickers back to empty. Also reset when reloading fails.
-  private async reload(): Promise<void> {
-    try {
-      this.data = await this.deps.loadData();
-      console.info(`pane: entities reloaded, ${this.data.byModule.size} modules`);
-    } catch (error: unknown) {
-      console.info(`pane: reload failed: ${error}`);
-      this.view.showOutcome({ tone: "error", text: `Could not reload entities: ${errorMessage(error)}` });
-    }
+  // After a rename: the entity's new name patched into the loaded data (no domain model reload, only the entity
+  // changed), module and entity pickers back to empty.
+  private afterRename(entityId: string, newName: string): void {
+    this.data = { ...this.data, byModule: withRenamedEntity(this.data.byModule, entityId, newName) };
+    console.info(`pane: entity list updated with ${newName}`);
     this.moduleName = "";
     this.view.setModules([...this.data.byModule.keys()]);
     this.view.setEntities(null);

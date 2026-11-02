@@ -61,6 +61,8 @@ describe("reconcileSharedName", () => {
       [`${QNAME}.OrderList`, `MyModule.${TARGET}.PurchaseList`],
       [QNAME, `MyModule.${TARGET}`],
     ]);
+    // The forced document rename is declared by the document.
+    expect(state.renames.existing((id) => id === "p1").has(QNAME)).toBe(true);
   });
 
   it("renames an unconnected association along with the document", () => {

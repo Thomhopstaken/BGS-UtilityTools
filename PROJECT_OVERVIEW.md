@@ -45,7 +45,7 @@ Studio Pro
 ```
 
 **Pane behaviour:**
-- After a successful rename, both pickers are reset to empty.
+- After a successful rename, the entity is renamed in the loaded list (no reload), and both pickers are reset to empty.
 - A context-menu preselect reloads the entities first, so new entities are listed.
 - Clicking a run log row opens that document (`ui.editors.editDocument`).
 
@@ -68,16 +68,28 @@ Studio Pro
 
 `renameService.runEntityRename` builds a `RenameContext` and the updaters (`updaters/updaterRegistry.ts`, the only place that touches `app.model`). It then runs `framework/RenameJob.ts` in Studio Pro's progress dialog.
 - Each step lists its units with `getUnitsInfo` and skips Marketplace modules and System.
-- Units are loaded, updated and saved in batches of 25 (`RenamePlanner.ts`).
+- Units are loaded in batches of 100 (`RenamePlanner.ts`). Each step drops units it has no work for (`accepts`) before batching, so batches are full.
+- API calls run one after another, never in parallel (lead decision).
 
 | Phase | What it does |
 |---|---|
 | **Prepare** | Checks the entity can be renamed, collects every document name per module (`DocumentNameRegistry`) and counts document templates for a warning. Changes nothing. |
 | **Plan** | Read-only, and the only phase that calls `resolve()`. Every updater decides which documents, parameters, variables and associations get a new name, and records each rename in `QualifiedNameRenames` (old → new qualified name). An error here stops the job before anything changes. |
 | **Entity** | `EntityRenameStep` renames the entity and the planned associations in its own domain model, and rewrites that domain model's references, in one save. |
-| **Rename** | Applies the plan: associations in other modules, then documents, parameters and variables, with every expression that uses them. |
-| **References** | `ReferenceUpdater` rewrites every renamed qualified name in each document type of `REFERENCE_DOCUMENT_TYPES`. |
-| **Refresh** | Saves changed pages and snippets once more, so Studio Pro drops stale consistency errors. |
+| **Rename** | Applies the plan: associations in other modules, Java and JavaScript actions, then flows, pages and other documents, with their parameters, variables and every expression that uses them. Loads only units with planned work. Flows also rewrite references to names that exist already (see below). |
+| **References** | `ReferenceUpdater` rewrites every renamed qualified name in each document type of `REFERENCE_DOCUMENT_TYPES`. Skips units the plan phase read that reference nothing renamed, and flows the rename phase saved up to date. |
+| **Refresh** | Saves changed pages and snippets that call a flow or page with renamed parameters once more, so Studio Pro drops stale consistency errors (CE0115/CE0117). |
+
+### Loading and saving as little as possible
+
+Nearly all of a rename's time is Studio Pro API calls. The lead's timings (89 s run) showed `loadAll` costs ~0.5 s per call whatever its size, and `save` ~0.11 s per unit; resolving, listing and our own code were a few seconds together. The fixes below brought that run down by ~10 s.
+- **Full batches:** units without work are left out before batching, so a step that changes 99 flows makes one `loadAll` call, not 19.
+- **One save per flow:** every rename key records the unit declaring it (`QualifiedNameRenames` owners). A new name exists once that unit was saved in this job (`savedInJob`). A flow's rename save also rewrites references to names that exist already; references to names saved later keep their old name, which still exists, until the reference pass. A flow left with no renamed reference is marked up to date (`ReferenceIndex.markUpToDate`) and skipped by the reference pass, unless its save failed.
+- **Fewer refreshes:** only changed pages and snippets that referenced a document with renamed parameters (`parameterOwnerPrefixes`).
+- **Rename phase:** a planner marks a unit in `DocumentRenamePlan` when it has a rename, a skipped rename (so the Skipped count stays right) or another change: a return variable, workflow texts, or published exposed names with the opt-in. Only units for which `needsRename` is true are loaded. The check runs when the batch runs, so a late forced or revoked rename from `sharedNames.ts` still counts.
+- **Reference pass:** every unit the plan phase loads is indexed by the `Module.Name` prefixes of its dotted names (`framework/ReferenceIndex.ts`, same walker and regex as the rewrite). An indexed unit is loaded only when one of its prefixes matches a renamed name. Types without a planner have no index entry and are always loaded: view entity sources, layouts, menus, scheduled events, consumed services, ML mappings, database connections, Excel templates, connector types, business event and CDC services.
+- **From metadata:** JSON structures and view entity sources are planned from their name alone (`updateFromInfo`), without loading.
+- **Resolver cache:** units loaded while planning seed `ReferenceResolver` (flow return entities, Java/JS signatures, workflow context entities), so most callees need no `resolve()`. That's why Java actions, JavaScript actions and workflows are planned before flows. Callees are always resolved by the name the caller writes, never by a planned new name.
 
 ### Why the order matters
 
@@ -103,7 +115,9 @@ Documents that hold text mirroring something external get an `onlyProperties` al
 
 ### Result
 
-`framework/RenameReport.ts` collects what changed, was skipped or failed. `ui/runLog.ts` shows it grouped as Entity, Failed, Renamed, Updated, Skipped, Navigation, Message definitions, and Code and reports.
+`framework/RenameReport.ts` collects what changed, was skipped or failed. `ui/runLog.ts` shows it grouped as Entity, Failed, Renamed, Updated, Skipped, Navigation, Message definitions, Code and reports, and Timings.
+
+**Timings** (`framework/JobTimings.ts`): `instrumentModel` wraps `app.model` so every API call is timed per progress step. The folded Timings group shows the dialog total, the time between steps, the API calls over all steps, and each step slowest first (calls, units, and "other": time outside API calls). Its rows have the `info` tone: never counted, hidden by "Only problems".
 
 The run log warns when:
 - navigation may point to renamed pages, microflows or nanoflows
@@ -184,6 +198,7 @@ Checked and not relevant (no entity references): image and icon collections, reg
 - **Documents are checked only on save.** Hence the phase order, the reference order and the refresh pass.
 - **The typings don't always match runtime.** Rules have no `parameters` list, and nanoflows hold their parameters only in the object collection. Code guards against missing properties.
 - **`loadAll` loads 10 units by default.** The job always passes the count it wants.
+- **API cost (lead's timings):** `loadAll` ~0.5 s per call regardless of units, `save` ~0.11 s per unit, `resolve` and `getUnitsInfo` a few ms. Fewer calls matter more than fewer units.
 - **Clicking a run log row works:** `editDocument` accepts the unit `$ID`.
 - **A changed message definition breaks its mappings,** and updating them in Studio Pro clears them.
 
@@ -225,6 +240,8 @@ Marked `UNVERIFIED:` in the code, and to be confirmed in Studio Pro.
 - Saving an ML mapping with a rewritten entity keeps its tensor mappings.
 - A view entity's source document has the view entity's name, a view entity can be renamed through the API, and pointing to the old source name for one save causes no stale error.
 - View entity OQL with double-quoted identifiers or comments is untested.
+- A flow whose last save is in the rename phase (before domain models get their reference save) shows no stale error; pages left out of the refresh show none either.
+- Model API methods still work through the timing wrapper (`instrumentModel`).
 - What Studio Pro does with the `.java`/`.js` file when an action is renamed.
 - Context menu:
   - its `documentId` is the domain model's unit `$ID`
@@ -262,7 +279,7 @@ ToDo.md                    roadmap
 src/manifest.json          main script and UI entry points
 src/main.ts                pane, Extensions menu, domain model context menus
 src/global.d.ts            .html/.css/.svg imports as strings
-src/shared/design/         BGS-UtilityTools design system: tokens.css, bundle.css, bgs-mark.svg,
+src/shared/design/         BGS-UtilityTools design system: tokens.css, bundle.css (incl. run log), bgs-mark.svg,
                            theme, pane mount, DOM helpers, status
 src/EntityNameChanger/
   main.ts                  pane entry point (wiring only)
@@ -276,7 +293,8 @@ src/EntityNameChanger/
   ui/                      pane.html, PaneView.ts (DOM), runLog.ts (report → run log)
   framework/               RenameJob, RenamePlanner (batches), RenameContext, PrepareStep, EntityRenameStep,
                            NamingPolicy, QualifiedNameRenames, DocumentNameRegistry, DocumentRenamePlan,
-                           AssociationRenamePlan, RenameReport, MessageDefinitionUsage, UnitInfoCache, types
+                           AssociationRenamePlan, ReferenceIndex, RenameReport, MessageDefinitionUsage,
+                           JobTimings, UnitInfoCache, types
   updaters/
     updaterRegistry.ts     every updater per phase, REFERENCE_DOCUMENT_TYPES, EXCLUDED_DOCUMENT_TYPES
     microflows/            FlowUpdater (microflows, nanoflows, rules), MicroflowHelper, ReferenceResolver,
@@ -288,7 +306,6 @@ src/EntityNameChanger/
     references/            ReferenceUpdater (qualified-name rewrite, optional allow-list)
     refresh/               RefreshUpdater (extra save of pages and snippets)
     shared/                elementWalker, qualifiedNameRewrite, variableRewrite, urlPlaceholders, renameDocument
-    StubUpdater.ts         placeholder for unimplemented document types (unused)
 src/UnitTests/             mirrors src/; helpers/ holds fakes, builders and FakeMessaging
 ```
 

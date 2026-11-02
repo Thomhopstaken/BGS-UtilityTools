@@ -11,8 +11,10 @@ import {
   onlyProblems,
   type RunLog,
   runLogMeta,
+  timingsGroup,
   unitTypeName,
 } from "../../../EntityNameChanger/ui/runLog";
+import { JobTimings } from "../../../EntityNameChanger/framework/JobTimings";
 import { changed, fakeContext, fakeUnitInfo } from "../helpers/fakes";
 
 const context = fakeContext();
@@ -277,6 +279,65 @@ describe("buildRunLog", () => {
   });
 });
 
+describe("timingsGroup", () => {
+  async function timedReport(): Promise<RenameReport> {
+    let now = 0;
+    const timings = new JobTimings(() => now);
+    timings.recordCall("getModulesTree", 100, 0);
+    await timings.measureDialog(async () => {
+      await timings.measureStep("Planning microflows", async () => {
+        timings.recordCall("loadAll", 3000, 120);
+        now += 4000;
+      });
+      await timings.measureStep("Updating pages", async () => {
+        timings.recordCall("loadAll", 2000, 40);
+        timings.recordCall("save", 4000, 0);
+        now += 7000;
+      });
+      await timings.measureStep("Rename entity", async () => {
+        now += 500;
+      });
+      now += 1500;
+    });
+    const report = renamedReport();
+    Object.assign(report, { timings });
+    return report;
+  }
+
+  it("is left out without timed steps", () => {
+    expect(timingsGroup(new JobTimings()).rows).toEqual([]);
+    expect(titles(buildRunLog(success, renamedReport(), context))).not.toContain("Timings");
+  });
+
+  it("shows the total, the model API, outside calls, then steps slowest first", async () => {
+    const report = await timedReport();
+    const log = buildRunLog(success, report, context);
+    expect(titles(log).at(-1)).toBe("Timings");
+    expect(log.groups.at(-1)?.rows).toEqual([
+      { tone: "info", what: "Total 13.0 s", note: "3 steps 11.5 s, between steps 1.5 s" },
+      { tone: "info", what: "Model API 9.1 s", note: "loadAll 2× 160 units 5.0 s, save 1× 4.0 s, getModulesTree 1× 0.1 s" },
+      { tone: "info", what: "Outside the steps 0.1 s", note: "getModulesTree 1× 0.1 s" },
+      { tone: "info", what: "Updating pages 7.0 s", note: "save 1× 4.0 s, loadAll 1× 40 units 2.0 s, other 1.0 s" },
+      { tone: "info", what: "Planning microflows 4.0 s", note: "loadAll 1× 120 units 3.0 s, other 1.0 s" },
+      { tone: "info", what: "Rename entity 0.5 s", note: "other 0.5 s" },
+    ]);
+  });
+
+  it("is folded, not counted and hidden with only problems", async () => {
+    const log = buildRunLog(success, await timedReport(), context);
+    const timingRows = log.groups.find((g) => g.title === "Timings")!;
+    expect(isOpenByDefault(timingRows)).toBe(false);
+    expect(countRows(log)).toEqual({ success: 1, warning: 0, error: 0 });
+    expect(onlyProblems(log.groups)).toEqual([]);
+  });
+
+  it("uses the step time when the dialog was not timed", async () => {
+    const timings = new JobTimings(() => 0);
+    await timings.measureStep("Preparing", async () => true);
+    expect(timingsGroup(timings).rows[0]).toEqual({ tone: "info", what: "Total 0.0 s", note: "1 steps 0.0 s, between steps 0.0 s" });
+  });
+});
+
 describe("changeNote", () => {
   it("joins non-zero counts with plurals", () => {
     expect(changeNote(1, 2, 0)).toBe("1 variable, 2 references");
@@ -308,10 +369,11 @@ describe("counts and filters", () => {
       { title: "A", rows: [{ tone: "success", what: "a1" }, { tone: "warning", what: "a2" }] },
       { title: "B", rows: [{ tone: "success", what: "b1" }] },
       { title: "C", rows: [{ tone: "error", what: "c1" }, { tone: "error", what: "c2" }] },
+      { title: "D", rows: [{ tone: "info", what: "d1" }] },
     ],
   };
 
-  it("counts rows per tone", () => {
+  it("counts rows per tone, info rows left out", () => {
     expect(countRows(log)).toEqual({ success: 2, warning: 1, error: 2 });
   });
 
@@ -323,7 +385,7 @@ describe("counts and filters", () => {
   });
 
   it("opens groups with problems only", () => {
-    expect(log.groups.map(isOpenByDefault)).toEqual([true, false, true]);
+    expect(log.groups.map(isOpenByDefault)).toEqual([true, false, true, false]);
   });
 
   it("labels the counts", () => {

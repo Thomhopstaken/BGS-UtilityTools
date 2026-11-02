@@ -145,11 +145,12 @@ select.bgs-input { padding-right: var(--space-1); }
 /* Code: qualified model names */
 .bgs-code { font-family: var(--font-mono); font-size: 12px; line-height: 16px; padding: 0 2px; border-radius: var(--radius-sm); background: var(--surface-sunken); color: var(--ink); }
 
-/* ---- Proposed (Entity Name Changer Pane artifact): run log, counts, small button ---- */
+/* Pane extras: inline SVG mark, empty status list, small button */
 .bgs-pane-header__mark > svg { display: block; height: 100%; width: auto; }
 .bgs-status-list:empty { display: none; }
 .bgs-btn--sm { height: 20px; padding: 0 var(--space-2); font-size: 11px; }
 
+/* Run log: header, counts, groups of rows */
 .bgs-runlog { margin-top: var(--space-3); border: 1px solid var(--hairline); border-radius: var(--radius-md); overflow: hidden; }
 .bgs-runlog[hidden] { display: none; }
 .bgs-runlog__head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); padding: var(--space-1) var(--space-2); background: var(--surface-sunken); border-bottom: 1px solid var(--hairline); }
@@ -182,6 +183,7 @@ select.bgs-input { padding-right: var(--space-1); }
 .bgs-logrow::before { content: ""; width: 6px; height: 6px; margin-top: 5px; border-radius: 50%; background: var(--tone, var(--success)); }
 .bgs-logrow--warning { --tone: var(--warning); }
 .bgs-logrow--error { --tone: var(--error); }
+.bgs-logrow--info { --tone: var(--info); }
 .bgs-logrow__what { font-family: var(--font-mono); font-size: 12px; line-height: 16px; overflow-wrap: anywhere; min-width: 0; }
 /* Log row that opens its document: looks like the plain row, underlined on hover */
 .bgs-logrow__link { appearance: none; background: none; border: 0; padding: 0; margin: 0; text-align: left; color: var(--accent-text); cursor: pointer; justify-self: start; }

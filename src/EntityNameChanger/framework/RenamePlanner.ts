@@ -1,11 +1,14 @@
 import type { Primitives } from "@mendix/extensions-api";
 import { isInScope, type RenameContext } from "./RenameContext";
+import type { RenameReport } from "./RenameReport";
 import type { UnitUpdater } from "./types";
 import type { UnitInfoCache } from "./UnitInfoCache";
 
-// Units loaded per progress step; each batch is dropped after saving so memory stays bounded.
+// Units per loadAll call; each batch is dropped after saving so memory stays bounded.
+// A loadAll call costs ~0.5 s however few units it loads (lead's timings, 2026-11-02), so batches are large.
 // Set to 1 to load every unit fresh after the previous one was saved.
-export const BATCH_SIZE = 25;
+export const BATCH_SIZE = 100;
+export const PLAN_BATCH_SIZE = 100;
 
 export type PlannedBatch = {
   updater: UnitUpdater;
@@ -28,12 +31,14 @@ export function chunk<T>(items: readonly T[], size: number): T[][] {
 }
 
 // Uses only unit metadata, so planning loads no documents. Stubs are skipped entirely.
-// With a cache, getUnitsInfo() is called once per model API.
+// With a cache, getUnitsInfo() is called once per model API. With a report, units the updater doesn't accept are left
+// out before batching, so every batch is full; call it when the step runs, as accepts depends on earlier steps.
 export async function planBatches(
   updaters: readonly UnitUpdater[],
   context: RenameContext,
   batchSize: number = BATCH_SIZE,
   unitInfos?: UnitInfoCache,
+  report?: RenameReport,
 ): Promise<PlannedBatch[]> {
   const batches: PlannedBatch[] = [];
   for (const updater of updaters) {
@@ -42,10 +47,12 @@ export async function planBatches(
       continue;
     }
     const all = await (unitInfos === undefined ? updater.access.getUnitsInfo() : unitInfos.get(updater.access));
-    const infos = all.filter(
+    const inScope = all.filter(
       (info) => info.$Type === updater.unitType && isInScope(info, context),
     );
-    console.info(`${updater.label}: ${infos.length} units in scope, batch size ${batchSize}`);
+    const infos =
+      report === undefined || updater.accepts === undefined ? inScope : inScope.filter((info) => updater.accepts!(info, report));
+    console.info(`${updater.label}: ${inScope.length} units in scope, ${infos.length} with work, batch size ${batchSize}`);
     let first = 1;
     for (const batch of chunk(infos, batchSize)) {
       batches.push({ updater, infos: batch, first, last: first + batch.length - 1, total: infos.length });

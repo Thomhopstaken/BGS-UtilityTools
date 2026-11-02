@@ -4,6 +4,7 @@ import { DocumentNameRegistry } from "../../../../EntityNameChanger/framework/Do
 import { DocumentRenamePlan } from "../../../../EntityNameChanger/framework/DocumentRenamePlan";
 import { NamingPolicy } from "../../../../EntityNameChanger/framework/NamingPolicy";
 import { QualifiedNameRenames } from "../../../../EntityNameChanger/framework/QualifiedNameRenames";
+import { ReferenceIndex } from "../../../../EntityNameChanger/framework/ReferenceIndex";
 import type { UpdaterMode } from "../../../../EntityNameChanger/framework/types";
 import { fakeContext, fakeUnitAccess, fakeUnitInfo } from "../../helpers/fakes";
 import { action, activity, microflow, microflowObject, objectType, parameter, stringType } from "../../helpers/microflowBuilders";
@@ -117,6 +118,23 @@ describe("FlowUpdater plan", () => {
     expect([...resolver.resolveAll.mock.calls[0][0].microflows]).toEqual(["MyModule.Sub"]);
   });
 
+  it("lets the rename phase load only flows with planned work", async () => {
+    const { planner, renamer } = setup(["ACT_Order_Get", "ACT_Purchase_Get"]);
+    const flows: [string, Flow][] = [
+      ["unrelated", microflow({ name: "ACT_Customer", objects: [parameter("Customer", stringType())] })],
+      ["variable", microflow({ name: "ACT_Process", objects: [parameter("Order", objectType(QNAME))] })],
+      ["return", microflow({ name: "GET_Data", returnType: objectType(QNAME), returnVariableName: "Order" })],
+      ["document", microflow({ name: "ACT_Order_Save", objects: [parameter("Customer", objectType(QNAME))] })],
+      ["skipped", microflow({ name: "ACT_Order_Get", objects: [parameter("Customer", objectType(QNAME))] })],
+    ];
+    for (const [id, flow] of flows) {
+      await planner.update(flow, fakeUnitInfo(id, "Microflows$Microflow", "MyModule", flow.name));
+    }
+    const accepted = flows.map(([id]) => renamer.accepts(fakeUnitInfo(id, "Microflows$Microflow")));
+    expect(accepted).toEqual([false, true, true, true, true]);
+    expect(planner.accepts(fakeUnitInfo("unrelated", "Microflows$Microflow"))).toBe(true);
+  });
+
   it("does not record anything for a unit without a module", async () => {
     const { planner, deps } = setup();
     const flow = microflow({ name: "ACT_Order", objects: [parameter("Order", objectType(QNAME))] });
@@ -217,6 +235,68 @@ describe("FlowUpdater rename", () => {
       ],
     });
     expect(await run(flow, info(flow.name))).toMatchObject({ renamedVariables: 2, updatedReferences: 0 });
+  });
+});
+
+describe("FlowUpdater rename with existing names", () => {
+  // The entity's domain model (dm-1) and the units in `saved` count as saved.
+  function withReferences(saved: string[] = []) {
+    const s = setup(["ACT_Order", "ACT_Caller"]);
+    const index = new ReferenceIndex();
+    const savedIds = new Set(["dm-1", ...saved]);
+    s.deps.references = { isSaved: (id) => savedIds.has(id), index };
+    return { ...s, index, savedIds };
+  }
+
+  const callerOf = (callee: string) => {
+    const call = action("MicroflowCallAction", { useReturnVariable: false, microflowCall: { $Type: "Microflows$MicroflowCall", microflow: callee, parameterMappings: [] }, outputVariableName: "" });
+    const param = parameter("Order", objectType(QNAME));
+    return { call, param, flow: microflow({ name: "ACT_Caller", objects: [param, activity(call)] }) };
+  };
+
+  it("rewrites references to names that exist and marks the flow up to date", async () => {
+    const { run, index } = withReferences();
+    const { param, flow } = callerOf("MyModule.Other");
+    const result = await run(flow, info(flow.name));
+    expect(result).toMatchObject({ changed: true, renamedVariables: 1, updatedReferences: 1 });
+    expect((param as Microflows.MicroflowParameterObject).variableType).toMatchObject({ entity: "MyModule.Purchase" });
+    expect(index.isUpToDate("mf-1")).toBe(true);
+  });
+
+  it("leaves a callee renamed later to the reference pass and does not mark the flow", async () => {
+    const { planner, renamer, index } = withReferences();
+    const callee = microflow({ name: "ACT_Order", objects: [parameter("Order", objectType(QNAME))] });
+    const { call, param, flow } = callerOf("MyModule.ACT_Order");
+    const calleeInfo = fakeUnitInfo("mf-callee", "Microflows$Microflow", "MyModule", "ACT_Order");
+    const callerInfo = fakeUnitInfo("mf-caller", "Microflows$Microflow", "MyModule", "ACT_Caller");
+    await planner.update(flow, callerInfo);
+    await planner.update(callee, calleeInfo);
+    expect(await renamer.update(flow, callerInfo)).toMatchObject({ changed: true, updatedReferences: 1 });
+    expect((param as Microflows.MicroflowParameterObject).variableType).toMatchObject({ entity: "MyModule.Purchase" });
+    expect((call.microflowCall as { microflow: string }).microflow).toBe("MyModule.ACT_Order");
+    expect(index.isUpToDate("mf-caller")).toBe(false);
+  });
+
+  it("rewrites a call to a callee saved earlier", async () => {
+    const { planner, renamer, index, savedIds } = withReferences();
+    const callee = microflow({ name: "ACT_Order", objects: [parameter("Order", objectType(QNAME))] });
+    const { call, flow } = callerOf("MyModule.ACT_Order");
+    const calleeInfo = fakeUnitInfo("mf-callee", "Microflows$Microflow", "MyModule", "ACT_Order");
+    const callerInfo = fakeUnitInfo("mf-caller", "Microflows$Microflow", "MyModule", "ACT_Caller");
+    await planner.update(callee, calleeInfo);
+    await planner.update(flow, callerInfo);
+    await renamer.update(callee, calleeInfo);
+    savedIds.add("mf-callee");
+    expect((await renamer.update(flow, callerInfo)).updatedReferences).toBe(2);
+    expect((call.microflowCall as { microflow: string }).microflow).toBe("MyModule.ACT_Purchase");
+    expect(index.isUpToDate("mf-caller")).toBe(true);
+  });
+
+  it("records the declaring flow of its document and parameter renames", async () => {
+    const { planner, deps } = withReferences();
+    const flow = microflow({ name: "ACT_Order", objects: [parameter("Order", objectType(QNAME))] });
+    await planner.update(flow, info(flow.name));
+    expect([...deps.renames.existing((id) => id === "mf-1").keys()]).toEqual(["MyModule.ACT_Order", "MyModule.ACT_Order.Order"]);
   });
 });
 

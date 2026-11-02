@@ -54,21 +54,9 @@ describe("runBatch", () => {
     expect(report.changed.map((c) => c.unitId)).toEqual(["a"]);
   });
 
-  it("loads only the units the updater accepts at run time", async () => {
-    const access = fakeUnitAccess([fakeUnit("a"), fakeUnit("b")]);
-    const update = vi.fn(async () => ({ ...UNCHANGED }));
-    const report = new RenameReport();
-    const updater: UnitUpdater = { ...fakeUpdater(access, update), accepts: (info, r) => r === report && info.$ID === "b" };
-    expect(await runBatch(batchOf(updater, [fakeUnitInfo("a", MF), fakeUnitInfo("b", MF)]), report)).toBe(true);
-    expect(access.loadCalls).toEqual([{ maxUnitsToLoad: 1 }]);
-    expect(update).toHaveBeenCalledTimes(1);
-    expect(report.checkedUnits).toBe(1);
-  });
-
-  it("skips loading when the updater accepts no unit", async () => {
+  it("loads nothing for an empty batch", async () => {
     const access = fakeUnitAccess([fakeUnit("a")]);
-    const updater: UnitUpdater = { ...fakeUpdater(access), accepts: () => false };
-    expect(await runBatch(batchOf(updater, [fakeUnitInfo("a", MF)]), new RenameReport())).toBe(true);
+    expect(await runBatch(batchOf(fakeUpdater(access), []), new RenameReport())).toBe(true);
     expect(access.loadCalls).toEqual([]);
   });
 
@@ -104,6 +92,53 @@ describe("runBatch", () => {
     expect(await runBatch(batchOf(updater, [fakeUnitInfo("a", MF), fakeUnitInfo("b", MF)]), report)).toBe(true);
     expect(report.failures.map((f) => f.error)).toEqual(["broken flow"]);
     expect(access.saved.map((u) => u.$ID)).toEqual(["b"]);
+  });
+
+  it("shows every updated unit to the observer, after updating it", async () => {
+    const access = fakeUnitAccess([fakeUnit("a"), fakeUnit("b")]);
+    const order: string[] = [];
+    const updater = fakeUpdater(access, async (unit) => {
+      order.push(`update ${unit.$ID}`);
+      return { ...UNCHANGED };
+    });
+    const observer = vi.fn((unit: Primitives.UnitBase, info: Readonly<Primitives.UnitInfo>) => {
+      order.push(`observe ${unit.$ID} ${info.$ID}`);
+    });
+    await runBatch(batchOf(updater, [fakeUnitInfo("a", MF), fakeUnitInfo("b", MF)]), new RenameReport(), observer);
+    expect(order).toEqual(["update a", "observe a a", "update b", "observe b b"]);
+  });
+
+  it("logs a failing observer and continues", async () => {
+    const access = fakeUnitAccess([fakeUnit("a"), fakeUnit("b")]);
+    const update = vi.fn(async () => ({ ...UNCHANGED }));
+    const report = new RenameReport();
+    const observer = () => {
+      throw new Error("index broken");
+    };
+    expect(await runBatch(batchOf(fakeUpdater(access, update), [fakeUnitInfo("a", MF), fakeUnitInfo("b", MF)]), report, observer)).toBe(true);
+    expect(update).toHaveBeenCalledTimes(2);
+    expect(report.failures).toEqual([]);
+  });
+
+  it("plans from metadata without loading, reporting each unit", async () => {
+    const access = fakeUnitAccess([fakeUnit("a")]);
+    const update = vi.fn(async () => ({ ...UNCHANGED }));
+    const fromInfo = vi.fn((info: Readonly<Primitives.UnitInfo>) => {
+      if (info.$ID === "b") {
+        throw new Error("no name");
+      }
+      return { ...UNCHANGED };
+    });
+    const observer = vi.fn();
+    const updater: UnitUpdater = { ...fakeUpdater(access, update), updateFromInfo: fromInfo };
+    const report = new RenameReport();
+    expect(await runBatch(batchOf(updater, [fakeUnitInfo("a", MF), fakeUnitInfo("b", MF)]), report, observer)).toBe(true);
+    expect(access.loadCalls).toEqual([]);
+    expect(update).not.toHaveBeenCalled();
+    expect(observer).not.toHaveBeenCalled();
+    expect(fromInfo).toHaveBeenCalledTimes(2);
+    expect(report.checkedUnits).toBe(2);
+    expect(report.failures.map((f) => f.error)).toEqual(["no name"]);
   });
 });
 
@@ -167,6 +202,25 @@ describe("runUpdater", () => {
     expect(report.checkedUnits).toBe(3);
   });
 
+  it("loads only the units the updater accepts when the step runs, in full batches", async () => {
+    const ids = ["a", "b", "c", "d", "e"];
+    const access = fakeUnitAccess(ids.map((id) => fakeUnit(id)), ids.map((id) => fakeUnitInfo(id, MF)));
+    const update = vi.fn(async () => ({ ...UNCHANGED }));
+    const report = new RenameReport();
+    const updater: UnitUpdater = { ...fakeUpdater(access, update), accepts: (info, r) => r === report && info.$ID !== "b" && info.$ID !== "c" };
+    expect(await runUpdater(updater, report, context, 2, new UnitInfoCache())).toBe(true);
+    expect(access.loadCalls).toEqual([{ maxUnitsToLoad: 2 }, { maxUnitsToLoad: 1 }]);
+    expect(update).toHaveBeenCalledTimes(3);
+    expect(report.checkedUnits).toBe(3);
+  });
+
+  it("loads nothing when the updater accepts no unit", async () => {
+    const access = fakeUnitAccess([fakeUnit("a")], [fakeUnitInfo("a", MF)]);
+    const updater: UnitUpdater = { ...fakeUpdater(access), accepts: () => false };
+    expect(await runUpdater(updater, new RenameReport(), context, 2, new UnitInfoCache())).toBe(true);
+    expect(access.loadCalls).toEqual([]);
+  });
+
   it("returns a message when the units cannot be listed", async () => {
     const access = fakeUnitAccess([]);
     access.getUnitsInfo = async () => {
@@ -185,7 +239,7 @@ describe("buildSteps", () => {
     const report = new RenameReport();
     const prepare = prepareStep();
     const entity = entityStep();
-    const steps = buildSteps({ prepare, planners: [planner], entityStep: entity, updaters: [updater] }, report, context, 1);
+    const steps = buildSteps({ prepare, planners: [planner], entityStep: entity, updaters: [updater] }, report, context, { plan: 1, write: 1 });
     expect(steps.map((s) => [s.title, s.description])).toEqual([
       ["Preparing", "Checking MyModule.Order and loading document names"],
       ["Planning microflows", "Finding flows (Order -> Purchase)"],
@@ -219,6 +273,16 @@ describe("buildSteps", () => {
     }
     expect(access.getUnitsInfoCalls).toBe(1);
     expect(access.loadCalls).toHaveLength(2);
+  });
+
+  it("times every step under its title, a failing step included", async () => {
+    const report = new RenameReport();
+    const failing = entityStep(async () => "boom");
+    const steps = buildSteps({ prepare: prepareStep(), planners: [], entityStep: failing, updaters: [fakeUpdater(fakeUnitAccess([]))] }, report, context);
+    for (const step of steps) {
+      await step.action();
+    }
+    expect(report.timings.steps.map((s) => s.title)).toEqual(["Preparing", "Rename entity", "Updating microflows"]);
   });
 });
 
@@ -267,6 +331,8 @@ describe("runRenameJob", () => {
     expect(report.entityRenamed).toBe(true);
     expect(report.entitySkipReason).toBeNull();
     expect(report.incompleteReason).toBeNull();
+    expect(report.timings.steps).toHaveLength(4);
+    expect(report.timings.dialogMs).not.toBeNull();
   });
 
   it("passes the batch size to each step", async () => {
@@ -279,6 +345,29 @@ describe("runRenameJob", () => {
     );
     expect(runner.steps).toHaveLength(3);
     expect(access.loadCalls).toEqual([{ maxUnitsToLoad: 2 }, { maxUnitsToLoad: 1 }]);
+  });
+
+  it("uses the plan batch size for planners and observes only their units", async () => {
+    const infos = [fakeUnitInfo("a", MF), fakeUnitInfo("b", MF), fakeUnitInfo("c", MF)];
+    const planAccess = fakeUnitAccess([fakeUnit("a"), fakeUnit("b"), fakeUnit("c")], infos);
+    const writeAccess = fakeUnitAccess([fakeUnit("a"), fakeUnit("b"), fakeUnit("c")], infos);
+    const observed: string[] = [];
+    await runRenameJob(
+      {
+        prepare: prepareStep(),
+        planners: [fakeUpdater(planAccess, undefined, { label: "Microflows (plan)" })],
+        planObserver: (unit) => observed.push(unit.$ID),
+        entityStep: entityStep(),
+        updaters: [fakeUpdater(writeAccess)],
+        runProgress: fakeProgressRunner().run,
+        batchSize: 1,
+        planBatchSize: 3,
+      },
+      context,
+    );
+    expect(planAccess.loadCalls).toEqual([{ maxUnitsToLoad: 3 }]);
+    expect(writeAccess.loadCalls).toEqual([{ maxUnitsToLoad: 1 }, { maxUnitsToLoad: 1 }, { maxUnitsToLoad: 1 }]);
+    expect(observed).toEqual(["a", "b", "c"]);
   });
 
   it("stops before listing or loading anything when preparing fails", async () => {

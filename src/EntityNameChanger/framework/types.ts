@@ -47,9 +47,11 @@ export interface UnitUpdater<TUnit extends Primitives.UnitBase = Primitives.Unit
   readonly implemented: boolean;
   readonly description: string;
   readonly access: UnitAccess<TUnit>;
-  // Filters units when the batch runs, so it can depend on earlier steps; all units when absent.
+  // Filters units when the step starts, so it can depend on earlier steps; all units when absent.
   accepts?(info: Readonly<Primitives.UnitInfo>, report: RenameReport): boolean;
   update(unit: TUnit, info: Readonly<Primitives.UnitInfo>): Promise<UnitUpdateResult>;
+  // Planners that need only metadata: the job calls this instead of loading the unit. Never changes a unit.
+  readonly updateFromInfo?: (info: Readonly<Primitives.UnitInfo>) => UnitUpdateResult;
 }
 
 // Wraps dialogs.showProgressDialog so the job can run without Studio Pro.

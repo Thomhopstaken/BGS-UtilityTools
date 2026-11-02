@@ -1,6 +1,6 @@
 import type * as Mx from "@mendix/extensions-api";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { allEntityNames, groupEntitiesByModule } from "../../EntityNameChanger/entityPicker";
+import { allEntityNames, type EntityOption, groupEntitiesByModule, withRenamedEntity } from "../../EntityNameChanger/entityPicker";
 import { fakeUnitInfo } from "./helpers/fakes";
 
 // The real package needs Studio Pro at runtime; only getContainer is used.
@@ -35,6 +35,27 @@ describe("groupEntitiesByModule", () => {
 
   it("returns an empty map without entities", () => {
     expect(groupEntitiesByModule([], infos).size).toBe(0);
+  });
+});
+
+describe("withRenamedEntity", () => {
+  const opt = (name: string, moduleName = "Sales"): EntityOption => ({ id: `id-${name}`, name, moduleName, domainModelId: `dm-${moduleName}` });
+
+  it("renames the entity and sorts its module again, leaving the input and other modules as they are", () => {
+    const other = [opt("Invoice", "Billing")];
+    const byModule = new Map<string, readonly EntityOption[]>([
+      ["Billing", other],
+      ["Sales", [opt("Customer"), opt("Order")]],
+    ]);
+    const result = withRenamedEntity(byModule, "id-Order", "Basket");
+    expect(result.get("Sales")).toEqual([{ ...opt("Order"), name: "Basket" }, opt("Customer")]);
+    expect(result.get("Billing")).toBe(other);
+    expect(byModule.get("Sales")!.map((o) => o.name)).toEqual(["Customer", "Order"]);
+  });
+
+  it("returns the same content for an unknown entity", () => {
+    const byModule = new Map<string, readonly EntityOption[]>([["Sales", [opt("Order")]]]);
+    expect(withRenamedEntity(byModule, "missing", "X")).toEqual(byModule);
   });
 });
 

@@ -5,6 +5,8 @@ import { type DocumentInspector, NO_LOCAL_RENAMES, type LocalRenames } from "./D
 // JSON structures hold no entity reference; one uses the entity when a mapping of the entity uses it.
 // Relies on the mapping planners running first (they fill usedJsonStructures).
 export class JsonStructureInspector implements DocumentInspector<JsonStructures.JsonStructure> {
+  // Decides by name alone, so planning never loads JSON structures (they can be large).
+  readonly plansFromInfo = true;
   private readonly usedJsonStructures: ReadonlySet<string>;
 
   constructor(usedJsonStructures: ReadonlySet<string>) {

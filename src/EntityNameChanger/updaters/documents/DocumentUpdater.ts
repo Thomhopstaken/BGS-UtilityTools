@@ -74,6 +74,10 @@ export interface DocumentInspector<TUnit extends Primitives.UnitBase & { name: s
   apply(unit: TUnit, local: LocalRenames): number;
   // Exposed names renamed and skipped by the last apply (published services only).
   exposedNameCounts?(): { renamed: number; skipped: number };
+  // Whether apply changes more than the local renames; read while planning. Absent: only local renames.
+  changesBeyondRenames?(unit: TUnit): boolean;
+  // Planning needs only the unit's metadata (name, module), so the planner never loads it.
+  readonly plansFromInfo?: boolean;
 }
 
 export type DocumentUpdaterSpec = {
@@ -110,6 +114,8 @@ export class DocumentUpdater<TUnit extends Primitives.UnitBase & { name: string 
   private readonly mode: UpdaterMode;
   private readonly inspector: DocumentInspector<TUnit>;
   private readonly deps: DocumentUpdaterDeps;
+  // Set when planning needs only metadata; the job then never loads the unit.
+  readonly updateFromInfo?: (info: Readonly<Primitives.UnitInfo>) => UnitUpdateResult;
 
   constructor(spec: DocumentUpdaterSpec, access: UnitAccess<TUnit>, inspector: DocumentInspector<TUnit>, deps: DocumentUpdaterDeps) {
     this.label = spec.label;
@@ -121,6 +127,18 @@ export class DocumentUpdater<TUnit extends Primitives.UnitBase & { name: string 
     this.access = access;
     this.inspector = inspector;
     this.deps = deps;
+    if (spec.mode === "plan" && inspector.plansFromInfo === true) {
+      this.updateFromInfo = (info) => {
+        console.debug(`plan: checking ${this.kind} ${info.moduleName}.${info.name} from its metadata`);
+        // The inspector reads only the name besides the metadata.
+        return this.plan({ name: info.name ?? "" } as TUnit, info);
+      };
+    }
+  }
+
+  // Rename phase: only documents the plan found work for are loaded.
+  accepts(info: Readonly<Primitives.UnitInfo>): boolean {
+    return this.mode === "plan" || this.deps.plan.needsRename(info.$ID);
   }
 
   async update(doc: TUnit, info: Readonly<Primitives.UnitInfo>): Promise<UnitUpdateResult> {
@@ -141,9 +159,14 @@ export class DocumentUpdater<TUnit extends Primitives.UnitBase & { name: string 
     );
     this.deps.plan.set(info.$ID, document, qualifiedName(info.moduleName, doc.name));
     const local = this.inspector.planLocalRenames(doc);
+    // Skipped local renames count as work: the rename phase reports them.
+    const work = local.renames.size > 0 || (local.skipped ?? 0) > 0 || (this.inspector.changesBeyondRenames?.(doc) ?? false);
+    if (work) {
+      this.deps.plan.markWork(info.$ID);
+    }
     this.recordRenames(info, doc.name, document.renamedTo, local);
     console.info(
-      `planned ${this.kind} ${info.moduleName}.${doc.name}: usesEntity=${usesEntity}, renamedTo=${document.renamedTo}, ${local.renames.size} local renames`,
+      `planned ${this.kind} ${info.moduleName}.${doc.name}: usesEntity=${usesEntity}, renamedTo=${document.renamedTo}, ${local.renames.size} local renames, work=${work}`,
     );
     return { ...UNCHANGED };
   }
@@ -179,13 +202,13 @@ export class DocumentUpdater<TUnit extends Primitives.UnitBase & { name: string 
       return;
     }
     if (renamedTo !== null) {
-      this.deps.renames.addDocument(moduleName, oldName, renamedTo);
+      this.deps.renames.addDocument(moduleName, oldName, renamedTo, info.$ID);
     }
     if (!local.referencedByCallers) {
       return;
     }
     for (const [oldLocal, newLocal] of local.renames) {
-      this.deps.renames.addParameter(moduleName, oldName, renamedTo ?? oldName, oldLocal, newLocal);
+      this.deps.renames.addParameter(moduleName, oldName, renamedTo ?? oldName, oldLocal, newLocal, info.$ID);
     }
   }
 }

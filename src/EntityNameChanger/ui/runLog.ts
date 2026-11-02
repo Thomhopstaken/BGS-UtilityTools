@@ -1,11 +1,14 @@
 import type { ProgressDialogResult } from "@mendix/extensions-api";
+import { apiMs, describeCalls, type JobTimings, seconds } from "../framework/JobTimings";
 import type { RenameContext } from "../framework/RenameContext";
 import type { RenameReport, UnitOutcome } from "../framework/RenameReport";
 import type { Status } from "../../shared/design/status";
 
 // What one rename did, shaped for the pane: an outcome line and grouped rows.
 
-export type RowTone = "success" | "warning" | "error";
+// info: not a result (timings); never counted or opened by default.
+export type RowTone = "success" | "warning" | "error" | "info";
+export type CountedTone = Exclude<RowTone, "info">;
 
 // The document a row is about; elementId focuses an element inside it.
 export type RowTarget = {
@@ -31,7 +34,7 @@ export type RunLog = {
   readonly groups: readonly RunLogGroup[];
 };
 
-export type RunLogCounts = Readonly<Record<RowTone, number>>;
+export type RunLogCounts = Readonly<Record<CountedTone, number>>;
 
 export function buildRunLog(dialog: ProgressDialogResult, report: RenameReport, context: RenameContext): RunLog {
   const groups = [
@@ -43,6 +46,7 @@ export function buildRunLog(dialog: ProgressDialogResult, report: RenameReport, 
     navigationGroup(report),
     messageDefinitionGroup(report),
     codeAndReportsGroup(report),
+    timingsGroup(report.timings),
   ].filter((group): group is RunLogGroup => group !== null && group.rows.length > 0);
   const outcome = buildOutcome(dialog, report, context);
   console.info(`run log: ${outcome.tone} '${outcome.text}', groups [${groups.map((g) => `${g.title} ${g.rows.length}`).join(", ")}]`);
@@ -244,6 +248,35 @@ function codeAndReportsGroup(report: RenameReport): RunLogGroup {
   return { title: "Code and reports", rows };
 }
 
+// Where the time went: the dialog total, the model API over all steps, then each step, slowest first.
+// "other" is time outside model API calls: this extension's code, and Studio Pro work between calls.
+export function timingsGroup(timings: JobTimings): RunLogGroup {
+  if (timings.steps.length === 0) {
+    return { title: "Timings", rows: [] };
+  }
+  const stepsMs = timings.stepsMs;
+  const totalMs = timings.dialogMs ?? stepsMs;
+  const totals = timings.totals();
+  const rows: RunLogRow[] = [
+    {
+      tone: "info",
+      what: `Total ${seconds(totalMs)}`,
+      note: `${timings.steps.length} steps ${seconds(stepsMs)}, between steps ${seconds(totalMs - stepsMs)}`,
+    },
+    { tone: "info", what: `Model API ${seconds(apiMs(totals))}`, note: describeCalls(totals) || "no calls" },
+  ];
+  if (timings.outside.calls.size > 0) {
+    rows.push({ tone: "info", what: `${timings.outside.title} ${seconds(apiMs(timings.outside.calls))}`, note: describeCalls(timings.outside.calls) });
+  }
+  for (const step of [...timings.steps].sort((a, b) => b.ms - a.ms)) {
+    const other = `other ${seconds(step.ms - apiMs(step.calls))}`;
+    const calls = describeCalls(step.calls);
+    rows.push({ tone: "info", what: `${step.title} ${seconds(step.ms)}`, note: calls === "" ? other : `${calls}, ${other}` });
+  }
+  console.debug(`timings: ${rows.length} rows`);
+  return { title: "Timings", rows };
+}
+
 // "Microflows$Microflow" -> "Microflow".
 export function unitTypeName(unitType: string): string {
   const name = unitType.split("$").pop() ?? unitType;
@@ -254,25 +287,29 @@ export function countRows(log: RunLog): RunLogCounts {
   const counts = { success: 0, warning: 0, error: 0 };
   for (const group of log.groups) {
     for (const row of group.rows) {
-      counts[row.tone]++;
+      if (row.tone !== "info") {
+        counts[row.tone]++;
+      }
     }
   }
   return counts;
 }
 
+const isProblem = (row: RunLogRow) => row.tone === "warning" || row.tone === "error";
+
 // Groups with warning and error rows only; empty groups are dropped.
 export function onlyProblems(groups: readonly RunLogGroup[]): RunLogGroup[] {
   return groups
-    .map((group) => ({ title: group.title, rows: group.rows.filter((row) => row.tone !== "success") }))
+    .map((group) => ({ title: group.title, rows: group.rows.filter(isProblem) }))
     .filter((group) => group.rows.length > 0);
 }
 
-// Problems open first; groups with only successes stay folded.
+// Problems open first; other groups stay folded.
 export function isOpenByDefault(group: RunLogGroup): boolean {
-  return group.rows.some((row) => row.tone !== "success");
+  return group.rows.some(isProblem);
 }
 
-export function countLabel(tone: RowTone, n: number): string {
+export function countLabel(tone: CountedTone, n: number): string {
   switch (tone) {
     case "success":
       return `${n} updated`;

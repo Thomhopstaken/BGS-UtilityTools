@@ -18,6 +18,11 @@ describe("WorkflowInspector.usesEntity", () => {
     expect(inspector.usesEntity(workflow({ entity: "MyModule.OrderLine" }))).toBe(false);
     expect(inspector.usesEntity(workflow({ entity: null }))).toBe(false);
   });
+
+  it("changes display texts beyond renames only for a workflow of the entity", () => {
+    expect(inspector.changesBeyondRenames(workflow({ entity: "MyModule.Order" }))).toBe(true);
+    expect(inspector.changesBeyondRenames(workflow({ entity: "MyModule.Customer" }))).toBe(false);
+  });
 });
 
 describe("WorkflowInspector.planLocalRenames", () => {

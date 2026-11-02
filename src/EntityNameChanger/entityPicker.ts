@@ -44,6 +44,23 @@ function compareNames(a: string, b: string): number {
   return a.localeCompare(b, "en", { sensitivity: "base" }) || a.localeCompare(b, "en");
 }
 
+// The picker data with one entity renamed, its module's options sorted again; the rest is shared, not copied.
+export function withRenamedEntity(
+  byModule: ReadonlyMap<string, readonly EntityOption[]>,
+  entityId: string,
+  newName: string,
+): Map<string, readonly EntityOption[]> {
+  const result = new Map(byModule);
+  for (const [moduleName, options] of byModule) {
+    if (options.some((o) => o.id === entityId)) {
+      const renamed = options.map((o) => (o.id === entityId ? { ...o, name: newName } : o));
+      result.set(moduleName, renamed.sort((a, b) => compareNames(a.name, b.name)));
+      console.debug(`entity picker: ${entityId} renamed to ${newName} in ${moduleName}`);
+    }
+  }
+  return result;
+}
+
 // Every entity name in the app's own modules; used to protect longer names (OrderLine when renaming Order).
 export function allEntityNames(byModule: ReadonlyMap<string, readonly EntityOption[]>): string[] {
   return [...byModule.values()].flatMap((options) => options.map((o) => o.name));

@@ -626,16 +626,27 @@ export class MicroflowHelper {
 
   // The default name callers get for the returned object; not a variable inside this flow.
   updateReturnVariableName(flow: Microflows.MicroflowBase): boolean {
-    if (!this.isEntityType(flow.microflowReturnType)) {
-      return false;
-    }
-    const newName = this.naming.rename(flow.returnVariableName);
-    if (newName === flow.returnVariableName) {
+    const newName = this.newReturnVariableName(flow);
+    if (newName === null) {
       return false;
     }
     console.debug(`return variable name '${flow.returnVariableName}' -> '${newName}'`);
     flow.returnVariableName = newName;
     return true;
+  }
+
+  // Read-only check for planning.
+  wouldRenameReturnVariable(flow: Microflows.MicroflowBase): boolean {
+    return this.newReturnVariableName(flow) !== null;
+  }
+
+  // null when the return variable keeps its name.
+  private newReturnVariableName(flow: Microflows.MicroflowBase): string | null {
+    if (!this.isEntityType(flow.microflowReturnType)) {
+      return null;
+    }
+    const newName = this.naming.rename(flow.returnVariableName);
+    return newName === flow.returnVariableName ? null : newName;
   }
 
   // Renamed parameters of this flow; callers reference them as Module.Flow.Parameter.

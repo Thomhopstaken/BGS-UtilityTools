@@ -50,6 +50,21 @@ describe("PageUpdater plan", () => {
     expect(planner.access).toBe(access);
   });
 
+  it("lets the rename phase load only documents with planned work", async () => {
+    const { planner, renamer } = setup("Pages$Page", ["Order_Edit"]);
+    const docs: [string, Pages.Page][] = [
+      ["unrelated", page({ name: "Customer_Edit", parameters: [pageParameter("Customer", stringType())] })],
+      ["parameter", page({ name: "Home", parameters: [pageParameter("Order", objectType(QNAME))] })],
+      ["clash", page({ name: "Overview", parameters: [pageParameter("Order", objectType(QNAME)), pageParameter("Purchase", stringType())] })],
+      ["document", page({ name: "Order_Edit", parameters: [pageParameter("Customer", objectType(QNAME))] })],
+    ];
+    for (const [id, doc] of docs) {
+      await planner.update(doc, fakeUnitInfo(id, "Pages$Page", "MyModule", doc.name));
+    }
+    expect(docs.map(([id]) => renamer.accepts(fakeUnitInfo(id, "Pages$Page")))).toEqual([false, true, true, true]);
+    expect(planner.accepts(fakeUnitInfo("unrelated", "Pages$Page"))).toBe(true);
+  });
+
   it("changes nothing in the unit and reports it unchanged", async () => {
     const { planner } = setup("Pages$Page", ["Order_Edit"]);
     const doc = page({ name: "Order_Edit", parameters: [pageParameter("Order", objectType(QNAME))] });
@@ -69,6 +84,8 @@ describe("PageUpdater plan", () => {
     ]);
     expect(deps.plan.get("doc-1")).toEqual({ renamedTo: "Purchase_Edit", skipped: 0 });
     expect(deps.documentNames.isFree("MyModule", "Purchase_Edit")).toBe(false);
+    // Declared by the page: they exist once it was saved.
+    expect([...deps.renames.existing((id) => id === "doc-1").keys()]).toEqual(["MyModule.Order_Edit", "MyModule.Order_Edit.Order"]);
   });
 
   it("records parameter renames of a snippet that keeps its name", async () => {

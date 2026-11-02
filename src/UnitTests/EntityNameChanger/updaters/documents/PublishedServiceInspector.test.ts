@@ -18,6 +18,13 @@ function setup(renameExposedNames: boolean) {
 
 const asDoc = (doc: unknown) => doc as PublishedServiceDocument;
 
+describe("PublishedServiceInspector.changesBeyondRenames", () => {
+  it("is the opt-in: exposed names are decided in the rename phase", () => {
+    expect(setup(true).inspector.changesBeyondRenames()).toBe(true);
+    expect(setup(false).inspector.changesBeyondRenames()).toBe(false);
+  });
+});
+
 describe("PublishedServiceInspector.usesEntity", () => {
   it("is true for a published entity, old or new name", () => {
     const { inspector } = setup(false);

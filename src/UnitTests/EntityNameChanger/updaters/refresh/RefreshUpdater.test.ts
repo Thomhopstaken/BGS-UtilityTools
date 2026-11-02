@@ -1,5 +1,7 @@
 import type { Primitives } from "@mendix/extensions-api";
 import { describe, expect, it } from "vitest";
+import { QualifiedNameRenames } from "../../../../EntityNameChanger/framework/QualifiedNameRenames";
+import { ReferenceIndex } from "../../../../EntityNameChanger/framework/ReferenceIndex";
 import { RenameReport } from "../../../../EntityNameChanger/framework/RenameReport";
 import { updateUnit } from "../../../../EntityNameChanger/framework/RenameJob";
 import { RefreshUpdater } from "../../../../EntityNameChanger/updaters/refresh/RefreshUpdater";
@@ -42,6 +44,26 @@ describe("RefreshUpdater", () => {
     expect(updater.accepts(fakeUnitInfo("p1", PAGE), report)).toBe(true);
     expect(updater.accepts(fakeUnitInfo("p2", PAGE), report)).toBe(false);
     expect(updater.accepts(fakeUnitInfo("p3", PAGE), report)).toBe(false);
+  });
+
+  it("with a filter, accepts only changed units that called a document with renamed parameters", () => {
+    const renames = new QualifiedNameRenames();
+    renames.add("MyModule.Order", "MyModule.Purchase");
+    renames.addParameter("MyModule", "ACT_Save", "ACT_Save", "Order", "Purchase");
+    const index = new ReferenceIndex();
+    index.add("p-calls", { $Type: PAGE, microflow: "MyModule.ACT_Save", parameter: "MyModule.ACT_Save.Order" });
+    index.add("p-entity", { $Type: PAGE, entity: "MyModule.Order" });
+    const updater = new RefreshUpdater({ documents: "pages", unitType: PAGE }, fakeUnitAccess([]), { index, renames });
+    const report = new RenameReport();
+    for (const id of ["p-calls", "p-entity", "p-unindexed"]) {
+      report.addResult("References in pages", fakeUnitInfo(id, PAGE), changed());
+    }
+    expect(["p-calls", "p-entity", "p-unindexed", "p-unchanged"].map((id) => updater.accepts(fakeUnitInfo(id, PAGE), report))).toEqual([
+      true,
+      false,
+      true,
+      false,
+    ]);
   });
 
   it("saves the touched unit, then has the job save it reverted", async () => {

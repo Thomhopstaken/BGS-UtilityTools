@@ -1,7 +1,9 @@
 import type { ProgressDialogResult } from "@mendix/extensions-api";
 import { describe, expect, it } from "vitest";
 import type { EntityOption } from "../../EntityNameChanger/entityPicker";
-import { countInScope, type RenameServiceDeps, runEntityRename } from "../../EntityNameChanger/renameService";
+import { RenameReport } from "../../EntityNameChanger/framework/RenameReport";
+import { UNCHANGED } from "../../EntityNameChanger/framework/types";
+import { countInScope, type RenameServiceDeps, runEntityRename, savedInJob } from "../../EntityNameChanger/renameService";
 import type { AppModel } from "../../EntityNameChanger/updaters/updaterRegistry";
 import { fakeContext, fakeProgressRunner, fakeUnitInfo } from "./helpers/fakes";
 
@@ -67,10 +69,46 @@ describe("runEntityRename", () => {
     expect(on.kind === "ran" && on.context.renameExposedNames).toBe(true);
   });
 
+  it("times the model API calls of each step in the report", async () => {
+    // Every API method resolves to an empty list; the prepare step then fails, after its calls were timed.
+    const emptyModel = new Proxy({} as Record<string, unknown>, {
+      get: () => new Proxy({}, { get: () => async () => [] }),
+    }) as unknown as AppModel;
+    const { serviceDeps } = deps({ result: "Success" } as ProgressDialogResult, {
+      model: emptyModel,
+      runProgress: async (_, steps) => {
+        await Promise.resolve(steps[0].action()).catch(() => undefined);
+        return { result: "Success" } as ProgressDialogResult;
+      },
+    });
+    const result = await runEntityRename(serviceDeps, { entity: order, newName: "Purchase" });
+    expect(result.kind).toBe("ran");
+    if (result.kind === "ran") {
+      expect(result.report.timings.steps.map((s) => s.title)).toEqual(["Preparing"]);
+      expect(result.report.timings.steps[0].calls.size).toBeGreaterThan(0);
+      expect(result.report.timings.dialogMs).not.toBeNull();
+    }
+  });
+
   it("allows a name that differs only in case from a taken one", async () => {
     const { runner, serviceDeps } = deps({ result: "Success" } as ProgressDialogResult, { entityNamesInModule: ["Order", "purchase"] });
     expect((await runEntityRename(serviceDeps, { entity: order, newName: "Purchase" })).kind).toBe("ran");
     expect(runner.titles).toHaveLength(1);
+  });
+});
+
+describe("savedInJob", () => {
+  it("counts changed units and the entity's domain model once the entity was renamed", () => {
+    const context = fakeContext();
+    const report = new RenameReport();
+    const isSaved = savedInJob(report, context);
+    expect(isSaved(context.domainModelId)).toBe(false);
+    report.entityRenamed = true;
+    expect(isSaved(context.domainModelId)).toBe(true);
+    report.addResult("Microflows", fakeUnitInfo("mf-1", "Microflows$Microflow"), { ...UNCHANGED, changed: true });
+    report.addResult("Microflows", fakeUnitInfo("mf-2", "Microflows$Microflow"), { ...UNCHANGED });
+    report.addError("Microflows", fakeUnitInfo("mf-3", "Microflows$Microflow"), "locked");
+    expect(["mf-1", "mf-2", "mf-3"].map(isSaved)).toEqual([true, false, false]);
   });
 });
 

@@ -11,7 +11,6 @@ import type {
   Rest,
   Workflows,
 } from "@mendix/extensions-api";
-import type { QualifiedNameRenames } from "../../framework/QualifiedNameRenames";
 import {
   type AssociationEnds,
   databaseQueryEntity,
@@ -52,19 +51,45 @@ export type ReferenceApis = {
   connectorTypes: ResolveAccess;
 };
 
-// Resolves referenced documents lazily, at most once per qualified name, into the shared cache.
+// Resolves referenced documents lazily, at most once per qualified name, into the shared cache. Runs in the plan phase
+// only, before anything is renamed, so every name is resolved as the caller writes it.
 export class ReferenceResolver {
   private readonly apis: ReferenceApis;
   private readonly cache: ReferenceCache;
-  // Flows renamed earlier in the job are resolved by their new name; callers still hold the old one.
-  private readonly renames: QualifiedNameRenames;
   // All associations by qualified name, loaded once when resolve() cannot find one.
   private associationFallback: Map<string, AssociationEnds> | null = null;
 
-  constructor(apis: ReferenceApis, cache: ReferenceCache, renames: QualifiedNameRenames) {
+  constructor(apis: ReferenceApis, cache: ReferenceCache) {
     this.apis = apis;
     this.cache = cache;
-    this.renames = renames;
+  }
+
+  // Fills the cache from a document the plan phase loaded anyway, so its callers need no resolve(). Never overwrites.
+  remember(unit: Primitives.UnitBase, info: Readonly<Primitives.UnitInfo>): void {
+    if (info.moduleName === undefined || info.name === undefined) {
+      return;
+    }
+    const qName = `${info.moduleName}.${info.name}`;
+    const cache = this.cache;
+    switch (unit.$Type) {
+      case "Microflows$Microflow":
+        setOnce(cache.microflowReturnEntities, qName, () => entityOfDataType((unit as Microflows.Microflow).microflowReturnType));
+        break;
+      case "Microflows$Nanoflow":
+        setOnce(cache.nanoflowReturnEntities, qName, () => entityOfDataType((unit as Microflows.Nanoflow).microflowReturnType));
+        break;
+      case "JavaActions$JavaAction":
+        setOnce(cache.javaActions, qName, () => javaActionSignature(unit as JavaActions.JavaAction));
+        break;
+      case "JavaScriptActions$JavaScriptAction":
+        setOnce(cache.javaScriptActions, qName, () => javaActionSignature(unit as JavaScriptActions.JavaScriptAction));
+        break;
+      case "Workflows$Workflow":
+        setOnce(cache.workflowContextEntities, qName, () => workflowContextEntity(unit as Workflows.Workflow));
+        break;
+      default:
+        break;
+    }
   }
 
   async resolveAll(refs: FlowReferences): Promise<void> {
@@ -76,18 +101,16 @@ export class ReferenceResolver {
     }
     for (const qName of refs.microflows) {
       if (!cache.microflowReturnEntities.has(qName)) {
-        const current = this.renames.current(qName);
-        const called = await tryResolve(current, () =>
-          this.apis.microflows.resolve<Microflows.Microflow>("Microflows$Microflow", current),
+        const called = await tryResolve(qName, () =>
+          this.apis.microflows.resolve<Microflows.Microflow>("Microflows$Microflow", qName),
         );
         cache.microflowReturnEntities.set(qName, entityOfDataType(called?.microflowReturnType));
       }
     }
     for (const qName of refs.nanoflows) {
       if (!cache.nanoflowReturnEntities.has(qName)) {
-        const current = this.renames.current(qName);
-        const called = await tryResolve(current, () =>
-          this.apis.nanoflows.resolve<Microflows.Nanoflow>("Microflows$Nanoflow", current),
+        const called = await tryResolve(qName, () =>
+          this.apis.nanoflows.resolve<Microflows.Nanoflow>("Microflows$Nanoflow", qName),
         );
         cache.nanoflowReturnEntities.set(qName, entityOfDataType(called?.microflowReturnType));
       }
@@ -250,6 +273,13 @@ export async function loadAssociationEnds(domainModels: DomainModelLookup): Prom
   }
   console.info(`loaded ${ends.size} associations from ${units.length} domain models`);
   return ends;
+}
+
+function setOnce<T>(map: Map<string, T>, key: string, value: () => T): void {
+  if (!map.has(key)) {
+    map.set(key, value());
+    console.debug(`reference cache: ${key} remembered from the plan`);
+  }
 }
 
 // "Module.Owner.Member" -> owner "Module.Owner", member "Member"; null without an owner part.

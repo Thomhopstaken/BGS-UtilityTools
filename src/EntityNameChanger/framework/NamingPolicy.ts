@@ -35,12 +35,13 @@ export class NamingPolicy {
 
   // Start indexes of non-overlapping old-name occurrences that are not inside a protected name.
   private findOccurrences(name: string): number[] {
-    if (this.oldName.length === 0) {
+    let index = this.oldName.length === 0 ? -1 : name.indexOf(this.oldName);
+    // Most names don't hold the entity name; skip the protected-name scan for them.
+    if (index === -1) {
       return [];
     }
     const protectedSpans = this.findProtectedSpans(name);
     const occurrences: number[] = [];
-    let index = name.indexOf(this.oldName);
     while (index !== -1) {
       const end = index + this.oldName.length;
       if (protectedSpans.some(([spanStart, spanEnd]) => index >= spanStart && end <= spanEnd)) {

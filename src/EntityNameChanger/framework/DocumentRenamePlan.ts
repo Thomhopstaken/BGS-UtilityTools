@@ -10,6 +10,8 @@ export class DocumentRenamePlan {
   private readonly renames = new Map<string, DocumentRename>();
   // Original qualified name -> unit id of every planned document, renamed or not.
   private readonly unitIds = new Map<string, string>();
+  // Units with changes besides a document rename (variables, parameters, texts); the rename phase loads only these.
+  private readonly work = new Set<string>();
 
   set(unitId: string, rename: DocumentRename, qname?: string): void {
     this.renames.set(unitId, rename);
@@ -26,6 +28,17 @@ export class DocumentRenamePlan {
       return { ...NOT_RENAMED };
     }
     return rename;
+  }
+
+  markWork(unitId: string): void {
+    this.work.add(unitId);
+  }
+
+  // Asked when the rename step starts, so document renames forced or revoked late in planning count. A skipped
+  // document rename counts too: the rename phase reports it.
+  needsRename(unitId: string): boolean {
+    const rename = this.renames.get(unitId);
+    return this.work.has(unitId) || (rename !== undefined && (rename.renamedTo !== null || rename.skipped > 0));
   }
 
   // Unit id of a planned document by its original qualified name; undefined for documents we don't plan.

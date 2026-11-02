@@ -2,7 +2,9 @@ import type { Microflows, Primitives } from "@mendix/extensions-api";
 import type { DocumentNameRegistry } from "../../framework/DocumentNameRegistry";
 import { type DocumentRenamePlan, qualifiedName } from "../../framework/DocumentRenamePlan";
 import type { QualifiedNameRenames } from "../../framework/QualifiedNameRenames";
+import type { ReferenceIndex } from "../../framework/ReferenceIndex";
 import { UNCHANGED, type UnitAccess, type UnitUpdater, type UnitUpdateResult, type UpdaterMode } from "../../framework/types";
+import { findReferencedNameInUnit, rewriteQualifiedNamesInUnit } from "../shared/qualifiedNameRewrite";
 import { planDocumentRename } from "../shared/renameDocument";
 import type { MicroflowHelper } from "./MicroflowHelper";
 import type { ReferenceResolver } from "./ReferenceResolver";
@@ -25,6 +27,14 @@ export type FlowUpdaterDeps = {
   documentNames: DocumentNameRegistry;
   renames: QualifiedNameRenames;
   plan: DocumentRenamePlan;
+  // Rename phase: references to names that exist already are rewritten in the same save. Without it all references
+  // are left to the reference pass.
+  references?: {
+    // Whether the unit was saved in this job; a renamed name exists once its declaring unit was saved.
+    isSaved: (unitId: string) => boolean;
+    // A flow with nothing left to rewrite is marked up to date, so the reference pass skips it.
+    index: ReferenceIndex;
+  };
 };
 
 export type FlowUnitType = "Microflows$Microflow" | "Microflows$Nanoflow" | "Microflows$Rule";
@@ -34,7 +44,8 @@ export type FlowDocument = Microflows.Microflow | Microflows.Nanoflow | Microflo
 // Microflows, nanoflows and rules, in two phases:
 // plan   - read-only: resolves references, decides the document rename and records document and parameter renames.
 // rename - renames variables, parameters, the return variable and the flow (as planned). Uses the references
-//          resolved in the plan phase; references to other renamed names are left to the reference pass.
+//          resolved in the plan phase. References to renamed names that exist already (their declaring unit was
+//          saved) are rewritten in the same save; the rest is left to the reference pass.
 export class FlowUpdater<TUnit extends FlowDocument> implements UnitUpdater<TUnit> {
   readonly label: string;
   readonly title?: string;
@@ -57,9 +68,14 @@ export class FlowUpdater<TUnit extends FlowDocument> implements UnitUpdater<TUni
     this.deps = deps;
   }
 
+  // Rename phase: only flows the plan found work for are loaded.
+  accepts(info: Readonly<Primitives.UnitInfo>): boolean {
+    return this.mode === "plan" || this.deps.plan.needsRename(info.$ID);
+  }
+
   async update(flow: TUnit, info: Readonly<Primitives.UnitInfo>): Promise<UnitUpdateResult> {
     const helper = this.deps.helper;
-    console.log(`${this.mode}: checking ${this.kind} ${info.moduleName}.${flow.name}`);
+    console.debug(`${this.mode}: checking ${this.kind} ${info.moduleName}.${flow.name}`);
     helper.reset();
     // Only planning resolves; resolve() while units are being changed may leave loaded copies stale.
     if (this.mode === "plan") {
@@ -84,9 +100,14 @@ export class FlowUpdater<TUnit extends FlowDocument> implements UnitUpdater<TUni
       helper.shouldRenameDocument(flow),
     );
     this.deps.plan.set(info.$ID, document, qualifiedName(info.moduleName, flow.name));
+    // Skipped renames count as work: the rename phase reports them.
+    const work = helper.renames.length > 0 || helper.skippedRenames > 0 || helper.wouldRenameReturnVariable(flow);
+    if (work) {
+      this.deps.plan.markWork(info.$ID);
+    }
     this.recordRenames(info, flow.name, document.renamedTo);
     console.info(
-      `planned ${this.kind} ${info.moduleName}.${flow.name}: renamedTo=${document.renamedTo}, ${helper.parameterRenames().length} parameter renames`,
+      `planned ${this.kind} ${info.moduleName}.${flow.name}: renamedTo=${document.renamedTo}, ${helper.renames.length} variable renames, ${helper.parameterRenames().length} parameter renames, work=${work}`,
     );
     return { ...UNCHANGED };
   }
@@ -106,11 +127,12 @@ export class FlowUpdater<TUnit extends FlowDocument> implements UnitUpdater<TUni
       console.info(`renaming ${this.kind} ${info.moduleName}.${oldName} to ${document.renamedTo}`);
       flow.name = document.renamedTo;
     }
+    const references = this.rewriteExistingReferences(flow, info);
     const result: UnitUpdateResult = {
-      changed: helper.renames.length > 0 || returnVariableChanged || document.renamedTo !== null,
+      changed: helper.renames.length > 0 || returnVariableChanged || document.renamedTo !== null || references > 0,
       renamedTo: document.renamedTo,
       renamedVariables: helper.renames.length,
-      updatedReferences: 0,
+      updatedReferences: references,
       skippedRenames: helper.skippedRenames + document.skipped,
       renamedAssociations: 0,
     };
@@ -118,6 +140,26 @@ export class FlowUpdater<TUnit extends FlowDocument> implements UnitUpdater<TUni
       `${info.moduleName}.${oldName}: changed=${result.changed}, ${result.renamedVariables} renames, ${result.skippedRenames} skipped`,
     );
     return result;
+  }
+
+  // Saves the flow's reference pass when every renamed name it references exists already. A name whose declaring unit
+  // is saved later (a callee later in this step, pages, other documents) keeps its old name, which still exists then,
+  // and the reference pass rewrites it. New names are never rename keys, so the reference pass can't rewrite twice.
+  // UNVERIFIED: Studio Pro shows no stale error for a flow whose last save is in the rename phase.
+  private rewriteExistingReferences(flow: TUnit, info: Readonly<Primitives.UnitInfo>): number {
+    const references = this.deps.references;
+    if (references === undefined) {
+      return 0;
+    }
+    const count = rewriteQualifiedNamesInUnit(flow, this.deps.renames.existing(references.isSaved));
+    const pending = findReferencedNameInUnit(flow, this.deps.renames.map);
+    if (pending === null) {
+      references.index.markUpToDate(info.$ID);
+    }
+    console.info(
+      `${info.moduleName}.${flow.name}: ${count} references updated, ${pending === null ? "up to date" : `${pending} left to the reference pass`}`,
+    );
+    return count;
   }
 
   // UNVERIFIED: rule parameters are assumed to appear as parameter objects too, as in microflows.
@@ -138,10 +180,10 @@ export class FlowUpdater<TUnit extends FlowDocument> implements UnitUpdater<TUni
       return;
     }
     if (renamedTo !== null) {
-      this.deps.renames.addDocument(moduleName, oldName, renamedTo);
+      this.deps.renames.addDocument(moduleName, oldName, renamedTo, info.$ID);
     }
     for (const parameter of this.deps.helper.parameterRenames()) {
-      this.deps.renames.addParameter(moduleName, oldName, renamedTo ?? oldName, parameter.oldName, parameter.newName);
+      this.deps.renames.addParameter(moduleName, oldName, renamedTo ?? oldName, parameter.oldName, parameter.newName, info.$ID);
     }
   }
 }

@@ -202,7 +202,7 @@ describe("EntityNameChangerPane.submit", () => {
     expect(view.runLog?.log?.groups[0].title).toBe("Entity");
     expect(view.runLog?.meta).toBe("10:00:01 · 1.0 s");
     expect(view.nameCleared).toBe(1);
-    expect(loadData).toHaveBeenCalledTimes(2);
+    expect(loadData).toHaveBeenCalledTimes(1);
   });
 
   it("passes the exposed names choice on", async () => {
@@ -222,22 +222,23 @@ describe("EntityNameChangerPane.submit", () => {
     expect(seen).toEqual([{ tone: "info", text: "Renaming MyModule.Order to MyModule.Purchase…" }]);
   });
 
-  it("reloads after a rename and clears the module and entity selection", async () => {
-    const renamed = data({ MyModule: ["Customer", "Purchase"], Other: ["Invoice"] });
-    const { view, pane } = await loadedWithRequest("Purchase", undefined, [data({ MyModule: ["Order", "Customer"], Other: ["Invoice"] }), renamed]);
+  it("patches the renamed entity in without reloading and clears the module and entity selection", async () => {
+    const { view, pane, loadData } = await loadedWithRequest("Zebra");
     await pane.submit();
+    expect(loadData).toHaveBeenCalledTimes(1);
     expect(view.modules.at(-1)).toEqual({ names: ["MyModule", "Other"], selected: undefined });
     expect(view.entities.at(-1)).toEqual({ options: null, selectedId: undefined });
     pane.selectModule("MyModule");
-    expect(view.entities.at(-1)?.options).toEqual(renamed.byModule.get("MyModule"));
+    expect(view.entities.at(-1)?.options).toEqual([option("Customer"), { ...option("Order"), name: "Zebra" }]);
   });
 
-  it("clears the selection when the reload fails", async () => {
-    const { view, pane, loadData } = await loadedWithRequest("Purchase");
-    loadData.mockRejectedValueOnce("offline");
+  it("protects the renamed entity's new name in the next rename", async () => {
+    const { view, pane, rename } = await loadedWithRequest("Purchase");
     await pane.submit();
-    expect(view.modules.at(-1)).toEqual({ names: ["MyModule", "Other"], selected: undefined });
-    expect(view.entities.at(-1)).toEqual({ options: null, selectedId: undefined });
+    pane.selectModule("MyModule");
+    view.request = { moduleName: "MyModule", entityId: "id-Customer", newName: "Client", renameExposedNames: false };
+    await pane.submit();
+    expect(rename.mock.calls[1][1]).toMatchObject({ allEntityNames: ["Customer", "Purchase", "Invoice"], entityNamesInModule: ["Customer", "Purchase"] });
   });
 
   it("keeps the selection when the entity was not renamed", async () => {
@@ -271,17 +272,6 @@ describe("EntityNameChangerPane.submit", () => {
     });
     await pane.submit();
     expect(view.outcome).toEqual([{ tone: "error", text: "Rename failed: API gone" }]);
-    expect(view.busy).toEqual([true, false]);
-  });
-
-  it("reports a failed reload without hiding the rename outcome", async () => {
-    const { view, pane, loadData } = await loadedWithRequest("Purchase");
-    loadData.mockRejectedValueOnce("offline");
-    await pane.submit();
-    expect(view.outcome).toEqual([
-      { tone: "success", text: "MyModule.Order renamed to MyModule.Purchase." },
-      { tone: "error", text: "Could not reload entities: offline" },
-    ]);
     expect(view.busy).toEqual([true, false]);
   });
 

@@ -2,6 +2,7 @@ import type { Primitives, ProgressDialogResult } from "@mendix/extensions-api";
 import { AssociationRenamePlan } from "./framework/AssociationRenamePlan";
 import { DocumentNameRegistry } from "./framework/DocumentNameRegistry";
 import { EntityRenameStep } from "./framework/EntityRenameStep";
+import { instrumentModel } from "./framework/JobTimings";
 import { PrepareStep } from "./framework/PrepareStep";
 import { QualifiedNameRenames } from "./framework/QualifiedNameRenames";
 import { createRenameContext, isInScope, type RenameContext } from "./framework/RenameContext";
@@ -43,6 +44,12 @@ export async function countInScope(
   return count;
 }
 
+// Whether a unit was saved so far in the job: a changed unit was saved (a failed save is reported as an error), and the
+// entity step saves the entity's domain model.
+export function savedInJob(report: RenameReport, context: RenameContext): (unitId: string) => boolean {
+  return (unitId) => report.wasChanged(unitId) || (unitId === context.domainModelId && report.entityRenamed);
+}
+
 // Wires the framework for one rename and runs it in the progress dialog. A quick name check first, so the
 // common mistake is reported without opening the dialog.
 export async function runEntityRename(deps: RenameServiceDeps, request: RenameRequest): Promise<RenameRunResult> {
@@ -62,7 +69,9 @@ export async function runEntityRename(deps: RenameServiceDeps, request: RenameRe
     allEntityNames: deps.allEntityNames,
     renameExposedNames: request.renameExposedNames ?? false,
   });
-  const { model } = deps;
+  // Created here so the mapping planners can fill its message definition usage, and the model can time its calls.
+  const jobReport = new RenameReport();
+  const model = instrumentModel(deps.model, jobReport.timings);
   const associationPlan = new AssociationRenamePlan();
   const entityStep = new EntityRenameStep(model.domainModels, context, associationPlan);
   // Filled by the prepare step inside the dialog.
@@ -73,20 +82,20 @@ export async function runEntityRename(deps: RenameServiceDeps, request: RenameRe
     countDocumentTemplates: () => countInScope(model.documentTemplates, context),
     documentNames,
   });
-  // Created here so the mapping planners can fill its message definition usage.
-  const jobReport = new RenameReport();
   const groups = createUpdaters(model, {
     context,
     documentNames,
     renames: QualifiedNameRenames.forEntity(context),
     associationPlan,
     messageDefinitionUsage: jobReport.messageDefinitionUsage,
+    isSaved: savedInJob(jobReport, context),
   });
   const started = Date.now();
   const { dialog, report } = await runRenameJob(
     {
       prepare,
       planners: groups.planners,
+      planObserver: groups.planObserver,
       entityStep,
       updaters: [...groups.renamers, ...groups.referenceUpdaters, ...groups.refreshers],
       runProgress: (title, steps) => {

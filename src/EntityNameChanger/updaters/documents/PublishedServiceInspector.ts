@@ -3,7 +3,7 @@ import type { NamingPolicy } from "../../framework/NamingPolicy";
 import type { QualifiedNameRenames } from "../../framework/QualifiedNameRenames";
 import type { RenameContext } from "../../framework/RenameContext";
 import { type ModelElement, walkElements } from "../shared/elementWalker";
-import { referencesQualifiedName } from "../shared/qualifiedNameRewrite";
+import { findReferencedName } from "../shared/qualifiedNameRewrite";
 import { rewriteUrlPlaceholders } from "../shared/urlPlaceholders";
 import {
   applyNamedRenames,
@@ -51,15 +51,15 @@ export class PublishedServiceInspector implements DocumentInspector<PublishedSer
   }
 
   usesEntity(service: PublishedServiceDocument, _info?: Readonly<Primitives.UnitInfo>): boolean {
-    const renamed = [...this.renames.map.keys(), this.context.newQualifiedName];
+    const renamed = new Set([...this.renames.map.keys(), this.context.newQualifiedName]);
     let found: string | null = null;
     walkElements(service, (element) => {
       if (found !== null) {
         return;
       }
       for (const [key, value] of Object.entries(element)) {
-        if (!key.startsWith("$") && typeof value === "string" && value.includes(".")) {
-          found = renamed.find((qname) => referencesQualifiedName(value, qname)) ?? null;
+        if (!key.startsWith("$") && typeof value === "string") {
+          found = findReferencedName(value, renamed);
           if (found !== null) {
             return;
           }
@@ -72,6 +72,12 @@ export class PublishedServiceInspector implements DocumentInspector<PublishedSer
 
   planLocalRenames(): LocalRenames {
     return NO_LOCAL_RENAMES;
+  }
+
+  // With the opt-in, apply renames exposed names; whether the service uses the entity is decided then, against the
+  // complete rename map, so every service is loaded in the rename phase.
+  changesBeyondRenames(): boolean {
+    return this.context.renameExposedNames;
   }
 
   apply(service: PublishedServiceDocument, _local: LocalRenames): number {

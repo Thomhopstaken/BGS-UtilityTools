@@ -4,12 +4,12 @@ import type { EntityOption } from "../entityPicker";
 import type { PaneViewPort } from "../EntityNameChangerPane";
 import type { PaneField } from "../validation";
 import {
+  type CountedTone,
   countLabel,
   countRows,
   isOpenByDefault,
   onlyProblems,
   type RowTarget,
-  type RowTone,
   type RunLog,
   type RunLogGroup,
 } from "./runLog";
@@ -29,7 +29,7 @@ export class PaneView implements PaneViewPort {
   private readonly runLogMeta: HTMLElement;
   private readonly runLogGroups: HTMLElement;
   private readonly runLogEmpty: HTMLElement;
-  private readonly counts: Record<RowTone, HTMLElement>;
+  private readonly counts: Record<CountedTone, HTMLElement>;
   private readonly onlyProblemsBox: HTMLInputElement;
   private readonly clearButton: HTMLButtonElement;
   private lastLog: RunLog | null = null;
@@ -143,7 +143,7 @@ export class PaneView implements PaneViewPort {
     this.runLogMeta.textContent = meta;
     if (log !== null) {
       const counts = countRows(log);
-      for (const tone of Object.keys(this.counts) as RowTone[]) {
+      for (const tone of Object.keys(this.counts) as CountedTone[]) {
         this.counts[tone].textContent = countLabel(tone, counts[tone]);
         this.counts[tone].classList.toggle("bgs-count--zero", counts[tone] === 0);
       }

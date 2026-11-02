@@ -18,7 +18,7 @@ when it can't be accessed.
 - do not change files outside the `src` folder without my permission.
 - create units tests for ALL code written.
 - testing requires running StudioPro, which you do not have access to. run the build command only to check if it builds, tell me what to test.
-- keep annotations short.
+- make annotations were sensable, and keep them short.
 - Make liberal use of debug and info logging.
 - Communicate every uncertainty about Studio pro.
 - NEVER Commit changes in the repo, i will do that.

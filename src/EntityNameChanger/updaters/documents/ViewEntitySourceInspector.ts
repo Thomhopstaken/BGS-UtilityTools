@@ -7,6 +7,8 @@ import { type DocumentInspector, type LocalRenames, NO_LOCAL_RENAMES } from "./D
 // source document is rewritten by the reference pass; other view entities keep their names.
 // UNVERIFIED: a source document has the same name as its view entity.
 export class ViewEntitySourceInspector implements DocumentInspector<DomainModels.ViewEntitySourceDocument> {
+  // Decides by name alone, so planning never loads source documents.
+  readonly plansFromInfo = true;
   private readonly context: RenameContext;
 
   constructor(context: RenameContext) {

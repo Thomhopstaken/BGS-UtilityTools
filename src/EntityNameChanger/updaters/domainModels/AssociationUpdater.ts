@@ -92,7 +92,7 @@ export class AssociationUpdater implements UnitUpdater<DomainModels.DomainModel>
       }
       names.register(association.name, target);
       plan.set(info.$ID, association.$ID, target);
-      renames.addAssociation(moduleName, association.name, target);
+      renames.addAssociation(moduleName, association.name, target, info.$ID);
       planned++;
     }
     console.info(`planned associations in ${moduleName}: ${planned} renames, ${skipped} skipped`);

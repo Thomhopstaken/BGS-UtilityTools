@@ -66,6 +66,9 @@ describe("AssociationUpdater", () => {
     await planner.update(domainModelWith("dm-2", { entities: ["Invoice"], crossAssociations: [cross] }), otherInfo);
     expect(shared.plan.get("dm-2").get("a1")).toBe("Invoice_Purchase");
     expect(shared.renames.map.get("Other.Invoice_Order")).toBe("Other.Invoice_Purchase");
+    // Declared by the domain model it lives in.
+    expect(shared.renames.existing((id) => id === "dm-2").has("Other.Invoice_Order")).toBe(true);
+    expect(shared.renames.existing(() => false).size).toBe(0);
   });
 
   it("skips a rename when the name is taken by an association or entity", async () => {

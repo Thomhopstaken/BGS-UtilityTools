@@ -34,6 +34,18 @@ describe("DocumentRenamePlan", () => {
 });
 
 describe("qualifiedName", () => {
+  it("needs a rename for marked work, a planned or skipped document rename, also when set late", () => {
+    const plan = new DocumentRenamePlan();
+    plan.set("work", { renamedTo: null, skipped: 0 });
+    plan.markWork("work");
+    plan.set("renamed", { renamedTo: "ACT_Purchase", skipped: 0 });
+    plan.set("skipped", { renamedTo: null, skipped: 1 });
+    plan.set("nothing", { renamedTo: null, skipped: 0 });
+    expect(["work", "renamed", "skipped", "nothing", "unplanned"].map((id) => plan.needsRename(id))).toEqual([true, true, true, false, false]);
+    plan.set("nothing", { renamedTo: "Purchase_Customer", skipped: 0 });
+    expect(plan.needsRename("nothing")).toBe(true);
+  });
+
   it("joins module and name, undefined without module", () => {
     expect(qualifiedName("M", "A")).toBe("M.A");
     expect(qualifiedName(undefined, "A")).toBeUndefined();
