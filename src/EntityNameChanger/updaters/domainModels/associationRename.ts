@@ -4,6 +4,7 @@ import { isEntityQname, type RenameContext } from "../../framework/RenameContext
 
 export type AnyAssociation = DomainModels.Association | DomainModels.CrossAssociation;
 
+// One applied rename; id is the association's $ID.
 export type AssociationRename = { id: string; oldName: string; newName: string };
 
 export function associationsOf(domainModel: DomainModels.DomainModel): AnyAssociation[] {

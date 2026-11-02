@@ -2,6 +2,7 @@ import type { Primitives } from "@mendix/extensions-api";
 import type { DocumentNameRegistry } from "../../framework/DocumentNameRegistry";
 import type { NamingPolicy } from "../../framework/NamingPolicy";
 
+// renamedTo: the planned new name, null when kept; skipped: 1 when the new name was taken.
 export type DocumentRename = { renamedTo: string | null; skipped: number };
 
 export const NOT_RENAMED: Readonly<DocumentRename> = Object.freeze({ renamedTo: null, skipped: 0 });

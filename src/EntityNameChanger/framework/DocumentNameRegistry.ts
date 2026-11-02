@@ -41,6 +41,7 @@ export class DocumentNameRegistry {
     addName(this.initialNames, moduleName, name);
   }
 
+  // Includes the renames registered so far; existedAtStart() ignores them.
   isFree(moduleName: string, name: string): boolean {
     return !(this.names.get(moduleName)?.has(name) ?? false);
   }

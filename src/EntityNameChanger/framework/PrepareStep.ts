@@ -2,6 +2,7 @@ import type { DocumentNameRegistry, DocumentTreeNode } from "./DocumentNameRegis
 import type { EntityStep } from "./RenameJob";
 import type { RenameReport } from "./RenameReport";
 
+// Model calls the step makes; injected so tests can fake them.
 export type PrepareStepDeps = {
   // Fresh check of the entity and its new name; returns an error message or null.
   validate(): Promise<string | null>;
@@ -21,6 +22,7 @@ export class PrepareStep implements EntityStep {
     this.deps = deps;
   }
 
+  // Returns the validation problem, which stops the job, or true.
   async run(report: RenameReport): Promise<true | string> {
     let started = Date.now();
     const problem = await this.deps.validate();

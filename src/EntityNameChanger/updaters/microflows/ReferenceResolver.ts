@@ -24,10 +24,12 @@ import {
   workflowContextEntity,
 } from "./ReferenceCache";
 
+// The part of a model API the resolver uses.
 export interface ResolveAccess {
   resolve<TElement extends Primitives.ElementBase>(type: TElement["$Type"], qualifiedName: string): Promise<TElement | null>;
 }
 
+// Domain model API; loading is needed for the association fallback.
 export interface DomainModelLookup extends ResolveAccess {
   getUnitsInfo(): Promise<ReadonlyArray<Readonly<Primitives.UnitInfo>>>;
   loadAll(
@@ -92,6 +94,7 @@ export class ReferenceResolver {
     }
   }
 
+  // Resolves every name not cached yet; missing or failing documents are cached as null.
   async resolveAll(refs: FlowReferences): Promise<void> {
     const cache = this.cache;
     for (const qName of refs.associations) {
@@ -292,6 +295,7 @@ function splitMember(qName: string): { owner: string; member: string } | null {
   return { owner: qName.slice(0, separator), member: qName.slice(separator + 1) };
 }
 
+// Errors are logged and treated as not found.
 async function tryResolve<T>(qName: string, resolver: () => Promise<T | null>): Promise<T | null> {
   try {
     const result = await resolver();

@@ -5,10 +5,12 @@ import {
 } from "@mendix/extensions-api";
 import { registerEntityRenameMenus } from "./EntityNameChanger/contextMenu";
 
+// Extension entry point: registers the pane, the Extensions menu and the domain model context menus.
 export const component: IComponent = {
     async loaded(componentContext: ComponentContext) {
         const studioPro = getStudioProApi(componentContext);
 
+        // uiEntrypoint "dockablepane" is the bundle built from EntityNameChanger/main.ts
         const panehandle = await studioPro.ui.panes.register(
             {
                 title: "Entity Name Changer",

@@ -8,6 +8,7 @@ import type { UnitInfoCache } from "./UnitInfoCache";
 // A loadAll call costs ~0.5 s however few units it loads (lead's timings, 2026-11-02), so batches are large.
 // Set to 1 to load every unit fresh after the previous one was saved.
 export const BATCH_SIZE = 100;
+// Units per loadAll call in the read-only plan steps.
 export const PLAN_BATCH_SIZE = 100;
 
 export type PlannedBatch = {

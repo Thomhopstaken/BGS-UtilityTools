@@ -48,7 +48,8 @@ export function validateNewName(entity: { readonly name: string } | undefined, n
   return null;
 }
 
-export type PaneField = "module" | "entity" | "name";
+// Pane inputs a FieldProblem can point to.
+export type PaneField ="module" | "entity" | "name";
 
 export type FieldProblem = {
   readonly field: PaneField;

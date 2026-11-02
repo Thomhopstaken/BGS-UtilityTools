@@ -9,6 +9,7 @@ import { planDocumentRename } from "../shared/renameDocument";
 import type { MicroflowHelper } from "./MicroflowHelper";
 import type { ReferenceResolver } from "./ReferenceResolver";
 
+// Settings for one flow type in one phase.
 export type FlowUpdaterSpec = {
   label: string;
   // Progress step title; defaults to "Updating <label>".
@@ -112,6 +113,7 @@ export class FlowUpdater<TUnit extends FlowDocument> implements UnitUpdater<TUni
     return { ...UNCHANGED };
   }
 
+  // Applies the plan: variables and their usages, the return variable, the document name, then existing references.
   private rename(flow: TUnit, info: Readonly<Primitives.UnitInfo>): UnitUpdateResult {
     const helper = this.deps.helper;
     const oldName = flow.name;

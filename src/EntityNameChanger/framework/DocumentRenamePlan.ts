@@ -13,6 +13,7 @@ export class DocumentRenamePlan {
   // Units with changes besides a document rename (variables, parameters, texts); the rename phase loads only these.
   private readonly work = new Set<string>();
 
+  // qname: the document's original qualified name, for unitIdOf().
   set(unitId: string, rename: DocumentRename, qname?: string): void {
     this.renames.set(unitId, rename);
     if (qname !== undefined) {

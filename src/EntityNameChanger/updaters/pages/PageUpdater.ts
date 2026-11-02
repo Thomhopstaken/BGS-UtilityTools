@@ -59,6 +59,7 @@ export class PageUpdater<TUnit extends PageDocument> implements UnitUpdater<TUni
   async update(doc: TUnit, info: Readonly<Primitives.UnitInfo>): Promise<UnitUpdateResult> {
     const helper = this.deps.helper;
     console.debug(`${this.mode}: checking ${this.kind} ${info.moduleName}.${doc.name}`);
+    // One helper serves every document, so its state is reset first.
     helper.reset();
     helper.detectParameters(doc);
     return this.mode === "plan" ? this.plan(doc, info) : this.rename(doc, info);

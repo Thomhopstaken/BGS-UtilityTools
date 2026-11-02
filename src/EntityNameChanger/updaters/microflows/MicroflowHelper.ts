@@ -39,6 +39,7 @@ function asModuleAction(action: Microflows.MicroflowAction): ModuleAction | null
   return MODULE_ACTION_TYPES.has((action as { $Type: string }).$Type) ? (action as unknown as ModuleAction) : null;
 }
 
+// Finds and renames the entity-typed variables of one flow at a time and rewrites their usages; reset() between flows.
 export class MicroflowHelper {
   readonly entityId: string;
   readonly entityQname: string;
@@ -74,6 +75,7 @@ export class MicroflowHelper {
   }
 
   //-------------------references to resolve before detection----------------------------//
+  // Documents whose signature decides whether an action's output is the entity; nested loops included.
   collectReferences(objects: Microflows.MicroflowObject[], refs?: FlowReferences): FlowReferences {
     const result = refs ?? emptyFlowReferences();
     for (const obj of objects) {
@@ -174,6 +176,7 @@ export class MicroflowHelper {
     this.registerRenames();
   }
 
+  // One detection pass over the objects, nested loops included.
   private detectInObjects(
     objects: Microflows.MicroflowObject[],
     sequenceFlows: Microflows.SequenceFlow[],
@@ -212,6 +215,7 @@ export class MicroflowHelper {
     }
   }
 
+  // Adds the variable an action declares when it holds the entity or a list of it.
   private detectInAction(
     activity: Microflows.ActionActivity,
     action: Microflows.MicroflowAction,
@@ -361,12 +365,14 @@ export class MicroflowHelper {
         console.debug(
           `association ${retrieve.association}: parent=${ends.parent} (${parentIsEntity}), child=${ends.child} (${childIsEntity}), start=${retrieve.startVariableName}`,
         );
+        // Self-association: either direction returns the entity.
         if (parentIsEntity && childIsEntity) {
           return true;
         }
         if (!parentIsEntity && !childIsEntity) {
           return false;
         }
+        // One end is the entity: the result is that end unless the retrieve starts from it.
         return !this.entityVariables.has(retrieve.startVariableName);
       }
       default:
@@ -476,6 +482,7 @@ export class MicroflowHelper {
         value.$Type === "Microflows$BasicCodeActionParameterValue" &&
         value.argument !== null
       ) {
+        // Only a bare $Variable argument binds the type parameter; other expressions are ignored.
         const variable = value.argument.trim().match(/^\$([A-Za-z_][A-Za-z0-9_]*)$/);
         if (variable !== null && this.entityVariables.has(variable[1])) {
           console.debug(`type parameter ${typeParameter} bound through $${variable[1]}`);
@@ -494,6 +501,7 @@ export class MicroflowHelper {
     return isEntityQname(qname, this.context);
   }
 
+  // Matches the entity by $ID or qualified name.
   private isEntityRef(ref: string): boolean {
     return ref === this.entityId || this.isEntityQname(ref);
   }
@@ -515,6 +523,7 @@ export class MicroflowHelper {
     this.addCandidate(found, action.outputVariableName, action, (name) => (action.outputVariableName = name));
   }
 
+  // Records the name for this pass; each declaring property becomes a candidate once.
   private addCandidate(found: Set<string>, name: string, target: object, apply: (name: string) => void): void {
     if (name.length === 0) {
       return;
@@ -548,6 +557,7 @@ export class MicroflowHelper {
     }
   }
 
+  // Objects by $ID, including those inside loops.
   private indexObjects(objects: Microflows.MicroflowObject[], objectsById: Map<string, Microflows.MicroflowObject>) {
     for (const obj of objects) {
       objectsById.set(obj.$ID, obj);
@@ -583,6 +593,7 @@ export class MicroflowHelper {
 
   private collectDeclaredActionNames(action: Microflows.MicroflowAction): void {
     const names: string[] = [];
+    // Most actions declare their output in outputVariableName; the switch covers the others.
     if ("outputVariableName" in action) {
       names.push(action.outputVariableName);
     }
@@ -707,7 +718,7 @@ export class MicroflowHelper {
           break;
         }
         case "Microflows$MicroflowParameterObject":
-          // Only the default value; the parameter name itself is never renamed.
+          // Only the default value; the parameter name itself is renamed by applyRenames().
           if (obj.defaultValue !== null) {
             obj.defaultValue = this.UpdateValue(obj.defaultValue);
           }
@@ -758,6 +769,7 @@ export class MicroflowHelper {
     }
   }
 
+  // Rewrites the variable usages of one action; output declarations are renamed by applyRenames().
   private updateActionUsage(action: Microflows.MicroflowAction): void {
     const moduleAction = asModuleAction(action);
     if (moduleAction !== null) {

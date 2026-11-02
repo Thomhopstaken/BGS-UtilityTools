@@ -40,6 +40,7 @@ export function groupEntitiesByModule(entities: readonly Mx.DomainModels.Entity[
   return sorted;
 }
 
+// Ignores case and accents first; a full compare breaks ties so the order is stable.
 function compareNames(a: string, b: string): number {
   return a.localeCompare(b, "en", { sensitivity: "base" }) || a.localeCompare(b, "en");
 }

@@ -30,6 +30,7 @@ export class MappingInspector implements DocumentInspector<MappingDocument> {
     this.recordMessageDefinition(mapping, info);
     let found = mapping.$Type === "ImportMappings$ImportMapping" && this.isEntity(entityOfDataType(mapping.parameterType));
     if (!found) {
+      // Matches import and export object mapping elements.
       walkElements(mapping.rootMappingElements, (element) => {
         found ||= element.$Type.endsWith("ObjectMappingElement") && this.isEntity(element.entity as string | null);
       });
@@ -71,6 +72,7 @@ export class MappingInspector implements DocumentInspector<MappingDocument> {
     return 1;
   }
 
+  // Records the mapping under each message definition it uses (messageDefinition and messageDefinition2).
   private recordMessageDefinition(mapping: MappingDocument, info: Readonly<Primitives.UnitInfo> | undefined): void {
     const mappingName = qualifiedName(info?.moduleName, mapping.name);
     if (mappingName === undefined) {

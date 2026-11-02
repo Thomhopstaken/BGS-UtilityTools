@@ -28,6 +28,7 @@ import { PageUpdater, type PageUpdaterDeps } from "./pages/PageUpdater";
 import { ReferenceUpdater } from "./references/ReferenceUpdater";
 import { RefreshUpdater } from "./refresh/RefreshUpdater";
 
+// The app.model part of the Studio Pro API.
 export type AppModel = StudioProApi["app"]["model"];
 
 export type UpdaterDeps = {
@@ -172,6 +173,7 @@ export const REFERENCE_DOCUMENT_TYPES: readonly {
   },
 ];
 
+// Unit types handled by DocumentUpdater; the keys of documentTypes in createUpdaters.
 type DocumentType =
   | "Workflows$Workflow"
   | "ImportMappings$ImportMapping"
@@ -205,6 +207,7 @@ export type UpdaterGroups = {
 export function createUpdaters(model: AppModel, deps: UpdaterDeps): UpdaterGroups {
   const { context, documentNames, renames } = deps;
   const naming = new NamingPolicy(context.oldName, context.newName, context.protectedNames);
+  // Document renames and work decided by the planners; read by the renamers.
   const plan = new DocumentRenamePlan();
   const references = new ReferenceCache();
   const resolver = new ReferenceResolver(
@@ -331,6 +334,7 @@ export function createUpdaters(model: AppModel, deps: UpdaterDeps): UpdaterGroup
       inspector: publishedServiceInspector as unknown as DocumentInspector<never>,
     },
   };
+  // Plan or rename updater for one document type; flows and pages below follow the same pattern.
   const documents = (mode: UpdaterMode, unitType: DocumentType): UnitUpdater => {
     const { kind, label, access, inspector } = documentTypes[unitType];
     const plural = `${kind}s`;

@@ -42,6 +42,7 @@ export class PublishedServiceInspector implements DocumentInspector<PublishedSer
   private readonly naming: NamingPolicy;
   // Seeded with the entity; filled with renamed documents by the planners that run before this one.
   private readonly renames: QualifiedNameRenames;
+  // Counts of the last apply; read by exposedNameCounts.
   private lastCounts = { renamed: 0, skipped: 0 };
 
   constructor(context: RenameContext, naming: NamingPolicy, renames: QualifiedNameRenames) {

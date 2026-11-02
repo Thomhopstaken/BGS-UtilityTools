@@ -20,6 +20,7 @@ export type RenameContext = {
   readonly renameExposedNames: boolean;
 };
 
+// Input for createRenameContext, which derives the qualified and protected names from it.
 export type RenameContextInput = {
   entityId: string;
   domainModelId: string;

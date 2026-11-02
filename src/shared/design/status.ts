@@ -1,6 +1,7 @@
 // Tones of the StatusMessage component; each maps to a bgs-status--<tone> modifier.
 export type StatusTone = "success" | "info" | "warning" | "error";
 
+// One message for the StatusMessage component.
 export type Status = {
   readonly tone: StatusTone;
   readonly text: string;

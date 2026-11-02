@@ -9,7 +9,8 @@ export type PaneMessage =
 
 export type ReadyResponse = { moduleName: string | null };
 
-export type Messaging = Pick<Mx.IMessagePassingApi, "sendMessage" | "addMessageHandler" | "sendResponse">;
+// The message passing calls used here; tests can fake them.
+export type Messaging =Pick<Mx.IMessagePassingApi, "sendMessage" | "addMessageHandler" | "sendResponse">;
 
 export function isPaneMessage(value: unknown): value is PaneMessage {
   const type = (value as { type?: unknown } | null)?.type;

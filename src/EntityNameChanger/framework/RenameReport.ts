@@ -3,6 +3,7 @@ import { JobTimings } from "./JobTimings";
 import { MessageDefinitionUsage } from "./MessageDefinitionUsage";
 import type { UnitUpdateResult } from "./types";
 
+// A unit an updater changed.
 export type UnitOutcome = {
   label: string;
   unitId: string;
@@ -13,6 +14,7 @@ export type UnitOutcome = {
   result: UnitUpdateResult;
 };
 
+// A unit whose update or save threw.
 export type UnitFailure = {
   label: string;
   unitId: string;
@@ -20,6 +22,7 @@ export type UnitFailure = {
   error: string;
 };
 
+// A renamed document, by qualified name before and after.
 export type DocumentRenameOutcome = {
   unitId: string;
   unitType: string;
@@ -127,6 +130,7 @@ export class RenameReport {
     this.incompleteReason = reason;
   }
 
+  // One line per kind of change, then the failures and why the entity was not renamed or the job not finished.
   summary(): string[] {
     const lines = [`Checked ${this.checkedUnits} documents, updated ${this.changedUnits}.`];
     const renamedDocuments = this.changed.filter((c) => c.result.renamedTo !== null);

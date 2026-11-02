@@ -14,8 +14,10 @@ export type StepTiming = {
   readonly calls: Map<string, ApiCallStats>;
 };
 
+// Milliseconds; injectable so tests control time.
 export type Clock = () => number;
 
+// Timings of one job, filled by measureStep, measureDialog and the instrumented model.
 export class JobTimings {
   readonly steps: StepTiming[] = [];
   // Calls made while no step runs, e.g. before the dialog opens.
@@ -26,6 +28,7 @@ export class JobTimings {
 
   constructor(readonly clock: Clock = () => performance.now()) {}
 
+  // Calls made while action runs are recorded on this step.
   async measureStep<T>(title: string, action: () => Promise<T>): Promise<T> {
     const step: StepTiming = { title, ms: 0, calls: new Map() };
     this.steps.push(step);
@@ -50,6 +53,7 @@ export class JobTimings {
     }
   }
 
+  // On the running step, or on outside when no step runs.
   recordCall(method: string, ms: number, units: number): void {
     const step = this.current ?? this.outside;
     const stats = step.calls.get(method) ?? { calls: 0, ms: 0, units: 0 };
@@ -80,6 +84,7 @@ export class JobTimings {
   }
 }
 
+// Total time of all calls.
 export function apiMs(calls: ReadonlyMap<string, ApiCallStats>): number {
   let ms = 0;
   for (const stats of calls.values()) {
@@ -120,6 +125,7 @@ export function instrumentModel<T extends object>(model: T, timings: JobTimings)
   });
 }
 
+// Wraps one model API; each method is wrapped once and reused.
 function instrumentApi(api: object, timings: JobTimings): object {
   const methods = new Map<PropertyKey, unknown>();
   return new Proxy({}, {
@@ -136,6 +142,7 @@ function instrumentApi(api: object, timings: JobTimings): object {
   });
 }
 
+// Records the call when it returns, or when its promise settles; failed calls are recorded too.
 function timed(fn: (...args: unknown[]) => unknown, api: object, method: string, timings: JobTimings): (...args: unknown[]) => unknown {
   return (...args) => {
     const started = timings.clock();

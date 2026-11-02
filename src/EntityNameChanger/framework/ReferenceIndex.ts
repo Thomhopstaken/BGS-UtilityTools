@@ -63,6 +63,7 @@ export class ReferenceIndex {
     return false;
   }
 
+  // Cached per prefix set: QualifiedNameRenames hands out a new set after every change.
   private affectedUnits(renames: QualifiedNameRenames): ReadonlySet<string> {
     const prefixes = renames.prefixes();
     if (this.affected === null || this.affected.prefixes !== prefixes) {

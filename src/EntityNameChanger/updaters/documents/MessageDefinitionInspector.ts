@@ -8,6 +8,7 @@ import { applyNamedRenames, type DocumentInspector, type LocalRenames, NO_LOCAL_
 
 export type MessageDefinitionDocument = MessageDefinitions.MessageDefinitionCollection | MessageDefinitions.MessageDefinition2;
 
+// Message definition elements whose `entity` property points at an entity.
 const EXPOSED_ENTITY_TYPES: ReadonlySet<string> = new Set(["MessageDefinitions$ExposedEntity", "MessageDefinitions$ExposedAssociation"]);
 
 // Message definition collections and standalone message definitions: renamed when they expose the entity. In a

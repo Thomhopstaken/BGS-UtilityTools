@@ -34,7 +34,7 @@ const ENTITY_PROPERTIES = ["entity", "destinationEntity", "specialization"] as c
 const MEMBER_PROPERTIES = ["attribute"] as const;
 
 // Renames entity-typed page/snippet parameters and their usages within the same document.
-// Cross-document references (parameter mappings in callers) are left to Studio Pro.
+// Cross-document references (parameter mappings in callers) are left to the reference pass.
 export class PageHelper {
   readonly entityQname: string;
   readonly context: RenameContext;
@@ -71,6 +71,7 @@ export class PageHelper {
       if (newName === parameter.name) {
         continue;
       }
+      // Taken by a declared name or by another parameter's new name.
       const clash = declared.has(newName) || [...this.renames.values()].includes(newName);
       if (clash) {
         console.info(`skipped rename of parameter '${parameter.name}' -> '${newName}' in ${doc.name}: name already in use`);
@@ -154,6 +155,7 @@ export class PageHelper {
     return changes;
   }
 
+  // Replaces the last segment, so bare and qualified references are both handled.
   private rewriteParameterReference(value: string): string {
     const dot = value.lastIndexOf(".");
     const newName = this.renames.get(value.slice(dot + 1));

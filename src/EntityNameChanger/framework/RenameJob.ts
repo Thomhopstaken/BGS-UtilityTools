@@ -69,6 +69,7 @@ export async function runRenameJob(
   return { dialog, report };
 }
 
+// Module.Name for logging; the $ID when the unit has no name.
 export function unitDisplayName(info: Readonly<Primitives.UnitInfo>): string {
   const name = info.name ?? info.$ID;
   return info.moduleName === undefined ? name : `${info.moduleName}.${name}`;

@@ -99,8 +99,8 @@ export type DocumentUpdaterDeps = {
   plan: DocumentRenamePlan;
 };
 
-// Documents without flow variables (workflows, mappings, JSON structures, message definitions, document templates,
-// datasets, Java and JavaScript actions), in two phases:
+// Documents without flow variables (workflows, mappings, JSON structures, message definitions, datasets, view entity
+// sources, Java and JavaScript actions, published services), in two phases:
 // plan   - read-only: decides the document rename and records it, with caller-visible local renames.
 // rename - applies the local renames and the planned document rename; references are left to the reference pass.
 export class DocumentUpdater<TUnit extends Primitives.UnitBase & { name: string }> implements UnitUpdater<TUnit> {

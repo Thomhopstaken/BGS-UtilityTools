@@ -1,3 +1,4 @@
+// esbuild loads these files as text (see build-extension.mjs); the import is the file's content.
 declare module "*.html" {
     const content: string;
     export default content;

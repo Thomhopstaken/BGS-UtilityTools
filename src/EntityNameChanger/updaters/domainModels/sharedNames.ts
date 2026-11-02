@@ -32,6 +32,7 @@ export function reconcileSharedName(input: SharedNameInput): SharedNameOutcome {
   if (target === null) {
     return { associationTarget: null, skipped: 0 };
   }
+  // The document already goes to target, or it is a renamed type and target is free in its module.
   const documentOk =
     documentTarget === target || (documentTarget === null && unitId !== undefined && documentNames.isFree(moduleName, target));
   const associationOk = input.associationNameFree(target);
@@ -54,6 +55,7 @@ export function reconcileSharedName(input: SharedNameInput): SharedNameOutcome {
   return { associationTarget: null, skipped: 1 };
 }
 
+// Adds a document rename the planners did not decide, so it matches the association.
 function forceDocumentRename(input: SharedNameInput, unitId: string, target: string): void {
   const { moduleName, name } = input;
   input.documentNames.register(moduleName, name, target);
@@ -63,6 +65,7 @@ function forceDocumentRename(input: SharedNameInput, unitId: string, target: str
   console.info(`document ${moduleName}.${name} renamed to ${target} along with the association`);
 }
 
+// Undoes a planned document rename and frees its new name.
 function revokeDocumentRename(input: SharedNameInput, unitId: string, target: string): void {
   const { moduleName, name } = input;
   input.documentNames.register(moduleName, target, name);

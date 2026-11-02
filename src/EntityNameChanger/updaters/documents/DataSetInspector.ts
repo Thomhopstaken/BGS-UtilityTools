@@ -45,6 +45,7 @@ export class DataSetInspector implements DocumentInspector<DataSets.DataSet> {
     if (local.renames.size === 0) {
       return changes;
     }
+    // bare: the property holds a parameter name without `$`.
     const rewrite = (owner: Record<string, unknown>, property: string, bare: boolean): void => {
       const value = owner[property];
       if (typeof value !== "string") {

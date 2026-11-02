@@ -43,6 +43,7 @@ export class AssociationUpdater implements UnitUpdater<DomainModels.DomainModel>
     this.deps = deps;
   }
 
+  // Rename phase: only other modules' domain models with planned renames.
   accepts(info: Readonly<Primitives.UnitInfo>): boolean {
     if (this.mode === "plan") {
       return true;
@@ -70,6 +71,7 @@ export class AssociationUpdater implements UnitUpdater<DomainModels.DomainModel>
     let skipped = 0;
     for (const association of associationsOf(domainModel)) {
       let target = proposedAssociationName(association, context, naming);
+      // A document shares the association's name: both get the same new name or neither is renamed.
       if (documentNames.existedAtStart(moduleName, association.name)) {
         const outcome = reconcileSharedName({
           moduleName,

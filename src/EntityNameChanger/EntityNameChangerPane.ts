@@ -26,13 +26,15 @@ export type PaneData = {
   readonly byModule: ReadonlyMap<string, readonly EntityOption[]>;
 };
 
-export type RenameScope = Pick<RenameServiceDeps, "excludedModules" | "allEntityNames" | "entityNamesInModule">;
+// Pane data the rename service needs besides the request.
+export type RenameScope =Pick<RenameServiceDeps, "excludedModules" | "allEntityNames" | "entityNamesInModule">;
 
 export type PaneDeps = {
   loadData(): Promise<PaneData>;
   rename(request: RenameRequest, scope: RenameScope): Promise<RenameRunResult>;
   // Opens the document in Studio Pro's editor.
   openDocument(target: RowTarget): Promise<void>;
+  // Clock for the run log's timing; new Date() when absent.
   now?(): Date;
 };
 
@@ -102,6 +104,7 @@ export class EntityNameChangerPane {
     this.view.setEntities(options);
   }
 
+  // Validates the form, then runs the rename; ignored while one is running.
   async submit(): Promise<void> {
     if (this.busy) {
       console.debug("pane: submit ignored, a rename is running");

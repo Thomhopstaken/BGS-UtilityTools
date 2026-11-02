@@ -55,6 +55,7 @@ export class EntityRenameStep implements EntityStep {
       report.skipEntity(problem);
       return problem;
     }
+    // findEntityProblem confirmed the entity exists.
     const entity = domainModel.entities.find((e) => e.$ID === this.context.entityId)!;
     const sourceDocument = viewEntitySourceDocument(entity);
     entity.name = this.context.newName;
@@ -85,6 +86,7 @@ export class EntityRenameStep implements EntityStep {
   }
 }
 
+// The OQL source of a view entity; null for any other entity.
 function oqlViewSource(entity: DomainModels.Entity): DomainModels.OqlViewEntitySource | null {
   const source = entity.source as DomainModels.OqlViewEntitySource | null | undefined;
   return source?.$Type === "DomainModels$OqlViewEntitySource" ? source : null;
@@ -106,6 +108,7 @@ function keepViewEntitySource(entity: DomainModels.Entity, sourceDocument: strin
   return 1;
 }
 
+// Error message when the entity is gone or another entity has the new name; null otherwise.
 export function findEntityProblem(domainModel: DomainModels.DomainModel, context: RenameContext): string | null {
   if (!domainModel.entities.some((e) => e.$ID === context.entityId)) {
     return `Entity ${context.oldQualifiedName} not found in its domain model.`;

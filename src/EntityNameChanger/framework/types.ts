@@ -10,6 +10,7 @@ export interface UnitAccess<TUnit extends Primitives.UnitBase> {
   save<TElement extends Primitives.ElementBase>(element: TElement): Promise<void>;
 }
 
+// What one updater did to one unit; the report adds it up.
 export type UnitUpdateResult = {
   // Whether the unit was modified and must be saved.
   changed: boolean;
@@ -25,7 +26,8 @@ export type UnitUpdateResult = {
   renamedExposedNames?: number;
 };
 
-export const UNCHANGED: Readonly<UnitUpdateResult> = Object.freeze({
+// Result for a unit the updater left as it was.
+export const UNCHANGED:Readonly<UnitUpdateResult> = Object.freeze({
   changed: false,
   renamedTo: null,
   renamedVariables: 0,

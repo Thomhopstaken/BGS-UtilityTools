@@ -32,7 +32,9 @@ export class PaneView implements PaneViewPort {
   private readonly counts: Record<CountedTone, HTMLElement>;
   private readonly onlyProblemsBox: HTMLInputElement;
   private readonly clearButton: HTMLButtonElement;
+  // Kept to re-render when the only-problems filter changes.
   private lastLog: RunLog | null = null;
+  // Read by setEntities, so a refill keeps the entity picker disabled during a run.
   private busy = false;
   private openHandler: ((target: RowTarget) => void) | null = null;
 
@@ -173,6 +175,7 @@ export class PaneView implements PaneViewPort {
     message.hidden = true;
   }
 
+  // Placeholder first (empty value); a selection not in items falls back to it.
   private fillSelect(select: HTMLSelectElement, placeholder: string, items: readonly { value: string; text: string }[], selected: string): void {
     const first = createElement(this.doc, "option", undefined, placeholder);
     first.value = "";

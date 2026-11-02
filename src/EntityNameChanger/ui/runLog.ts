@@ -36,6 +36,7 @@ export type RunLog = {
 
 export type RunLogCounts = Readonly<Record<CountedTone, number>>;
 
+// Groups in display order; empty groups are dropped.
 export function buildRunLog(dialog: ProgressDialogResult, report: RenameReport, context: RenameContext): RunLog {
   const groups = [
     entityGroup(report, context),
@@ -53,6 +54,7 @@ export function buildRunLog(dialog: ProgressDialogResult, report: RenameReport, 
   return { outcome, groups };
 }
 
+// The pane's one-line outcome for the dialog result.
 export function buildOutcome(dialog: ProgressDialogResult, report: RenameReport, context: RenameContext): Status {
   const from = context.oldQualifiedName;
   const failed = report.failures.length;
@@ -283,6 +285,7 @@ export function unitTypeName(unitType: string): string {
   return name.length === 0 ? unitType : name;
 }
 
+// Rows per tone; info rows are not counted.
 export function countRows(log: RunLog): RunLogCounts {
   const counts = { success: 0, warning: 0, error: 0 };
   for (const group of log.groups) {

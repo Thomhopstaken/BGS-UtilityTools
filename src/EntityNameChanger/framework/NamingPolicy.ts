@@ -44,6 +44,7 @@ export class NamingPolicy {
     const occurrences: number[] = [];
     while (index !== -1) {
       const end = index + this.oldName.length;
+      // Inside a protected name: search again one character further.
       if (protectedSpans.some(([spanStart, spanEnd]) => index >= spanStart && end <= spanEnd)) {
         index = name.indexOf(this.oldName, index + 1);
         continue;
@@ -54,6 +55,7 @@ export class NamingPolicy {
     return occurrences;
   }
 
+  // [start, end) of every protected name occurrence in name.
   private findProtectedSpans(name: string): [number, number][] {
     const spans: [number, number][] = [];
     for (const protectedName of this.protectedNames) {

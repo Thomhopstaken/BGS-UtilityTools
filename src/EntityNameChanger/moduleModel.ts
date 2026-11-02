@@ -5,11 +5,13 @@ import { groupEntitiesByModule } from "./entityPicker";
 type DomainModelApi = Mx.ModelAccessWithComponent<Mx.IDomainModelApi, Mx.DomainModels.DomainModel>;
 type ModulesApi = Pick<Mx.IModuleApi, "getModules">;
 
+// Entities of every domain model outside the excluded modules.
 export async function getEntities(
   domainModels: DomainModelApi,
   modulelist: readonly Readonly<Mx.Projects.Module>[],
   appStoreList: ReadonlySet<string>,
 ): Promise<Mx.DomainModels.Entity[]> {
+  // One domain model per module, so the own module count caps the units to load.
   const domainModelUnits = await domainModels.loadAll(
     (info: Mx.Primitives.UnitInfo) => info.moduleName !== undefined && !appStoreList.has(info.moduleName),
     modulelist.length - appStoreList.size,
@@ -19,6 +21,7 @@ export async function getEntities(
   return entities;
 }
 
+// App Store modules plus System: the modules a rename never touches.
 export function getAppstoreModuleNames(modulelist: readonly Readonly<Mx.Projects.Module>[]): Set<string> {
   const appStoreList = new Set<string>(["System"]);
   modulelist.forEach((module) => {

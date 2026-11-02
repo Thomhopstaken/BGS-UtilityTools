@@ -44,6 +44,7 @@ export type JavaActionParameterFact = {
   typeParameter: string | null;
 };
 
+// Entity facts of a Java/JavaScript action: a concrete return entity, or the type parameter it returns.
 export type JavaActionSignature = {
   returnEntity: string | null;
   returnTypeParameter: string | null;
@@ -109,6 +110,7 @@ export function entityOfCodeActionType(type: CodeActions.Type | null | undefined
   return entityType.$Type === "CodeActions$ConcreteEntityType" ? entityType.entity : null;
 }
 
+// Type parameter of a parameterized entity type or a list of one.
 function typeParameterOf(type: CodeActions.Type): string | null {
   const entityType = type.$Type === "CodeActions$ListType" ? type.parameter : type;
   return entityType.$Type === "CodeActions$ParameterizedEntityType" ? entityType.typeParameter : null;
@@ -119,6 +121,7 @@ export function workflowContextEntity(workflow: Workflows.Workflow): string | nu
   return workflow.parameter?.entity ?? null;
 }
 
+// Root entity of an implicit response mapping; null for other response handling.
 export function restOperationEntity(operation: Rest.RestOperation): string | null {
   const response = operation.responseHandling;
   return response.$Type === "Rest$ImplicitMappingResponseHandling" ? response.rootMappingElement.entity : null;
@@ -148,6 +151,7 @@ export function excelTemplateEntity(template: ExcelDataImporter.Template): strin
   return singleEntity(contents.sheets.map((sheet) => sheet.entity));
 }
 
+// The one distinct non-empty entity; null when there are none or several.
 function singleEntity(entities: readonly (string | null)[]): string | null {
   const distinct = new Set(entities.filter((entity): entity is string => entity !== null && entity.length > 0));
   return distinct.size === 1 ? [...distinct][0] : null;

@@ -10,6 +10,7 @@ export type RefreshUpdaterSpec = {
   unitType: string;
 };
 
+// The property the refresh touches.
 type Documented = { documentation: string };
 
 // Which changed documents need a refresh: only those that referenced a document whose parameters were renamed.
@@ -31,6 +32,7 @@ export class RefreshUpdater<TUnit extends Primitives.UnitBase = Primitives.UnitB
   readonly description: string;
   readonly access: UnitAccess<TUnit>;
   private readonly filter?: RefreshFilter;
+  // Prefixes of documents with renamed parameters; set on first accepts.
   private parameterOwners: ReadonlySet<string> | null = null;
 
   constructor(spec: RefreshUpdaterSpec, access: UnitAccess<TUnit>, filter?: RefreshFilter) {
