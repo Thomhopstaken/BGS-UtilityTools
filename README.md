@@ -6,7 +6,7 @@ It adds **Extensions ▸ BGS-UtilityTools** to Studio Pro's menu. Built on `@men
 
 ## Installation
 
-Download **BGS-UtilityTools** from the Mendix Marketplace into your app <!-- TODO: Marketplace link once listed -->, then reopen the app in Studio Pro 11.12.2 or above
+Download **BGS-UtilityTools** from the Mendix Marketplace into your app <!-- TODO: Marketplace link once listed -->, then reopen the app in Studio Pro 11.12.2 or above.
 
 ## Tools
 
@@ -14,8 +14,6 @@ Download **BGS-UtilityTools** from the Mendix Marketplace into your app <!-- TOD
 | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | **NameChanger** | Renames a domain model entity and everything named after it: microflows, pages, associations, parameters, variables and more. Every reference to them is updated. Opened from the menu, or by right-clicking a domain model and choosing **Rename entity…**. |
 | **Prefixer**    | Renames or removes a document prefix (`ACT_Order_Save` → `SUB_Order_Save` or `Order_Save`) for one document type, and updates every reference. A prefix is 1–4 capital letters before the first underscore.                                                  |
-
-Planned: a CSS class searcher and a microflow color palette (`ToDo.md`).
 
 ### Before you run a tool
 
