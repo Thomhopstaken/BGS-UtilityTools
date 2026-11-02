@@ -14,8 +14,13 @@ const entryPoints = [
 ];
 
 entryPoints.push({
-  in: "src/EntityNameChanger/main.ts",
-  out: "dockablepane",
+  in: "src/NameChanger/main.ts",
+  out: "namechangerpane",
+});
+
+entryPoints.push({
+  in: "src/Prefixer/main.ts",
+  out: "prefixerpane",
 });
 
 const args = parseArgs(process.argv.slice(2));

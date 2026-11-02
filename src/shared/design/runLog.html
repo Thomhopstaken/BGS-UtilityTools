@@ -1,0 +1,17 @@
+<div class="bgs-runlog" id="runLog" hidden>
+  <div class="bgs-runlog__head">
+    <span class="bgs-runlog__title">Run log</span>
+    <span class="bgs-runlog__meta" id="runLogMeta"></span>
+    <span class="bgs-runlog__actions">
+      <button type="button" class="bgs-btn bgs-btn--sm" id="clearLog">Clear</button>
+    </span>
+  </div>
+  <div class="bgs-runlog__bar">
+    <span class="bgs-count bgs-count--success" id="countSuccess"></span>
+    <span class="bgs-count bgs-count--warning" id="countWarning"></span>
+    <span class="bgs-count bgs-count--error" id="countError"></span>
+    <label class="bgs-check"><input type="checkbox" id="onlyProblems" /><span>Only problems</span></label>
+  </div>
+  <div id="runLogGroups"></div>
+  <div class="bgs-runlog__empty" id="runLogEmpty" hidden>No warnings or failures in this run.</div>
+</div>

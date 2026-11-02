@@ -1,7 +1,12 @@
 {
   "permissions": {
     "allow": [
-      "PowerShell(npm test 2>&1)"
+      "PowerShell(npm test 2>&1)",
+      "PowerShell(npm view @mendix/extensions-api versions --json)",
+      "PowerShell(npm view @mendix/extensions-api dist-tags --json)",
+      "WebSearch",
+      "WebFetch(domain:docs.mendix.com)",
+      "PowerShell(npm view \"@mendix/extensions-api@0.1.5-mendix.10.24.28\" --json)"
     ]
   }
 }

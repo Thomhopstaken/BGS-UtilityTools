@@ -3,7 +3,8 @@
     "entryPoints": {
       "main": "main.js",
       "ui": {
-        "dockablepane": "dockablepane.js"
+        "namechangerpane": "namechangerpane.js",
+        "prefixerpane": "prefixerpane.js"
       }
     },
     "permissions": {

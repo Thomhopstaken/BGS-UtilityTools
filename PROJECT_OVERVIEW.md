@@ -2,20 +2,22 @@
 
 ## 1. What this is
 
-BGS-UtilityTools is a **Mendix Studio Pro web extension** written in TypeScript on `@mendix/extensions-api` (`0.11.4-mendix.11.12.4`, beta). Studio Pro hosts it in an embedded browser (WebView2), where it can read and change the open app model.
+BGS-UtilityTools is a **Mendix Studio Pro web extension** written in TypeScript on `@mendix/extensions-api` (`0.11.2-mendix.11.12.2`, beta). Studio Pro hosts it in an embedded browser (WebView2), where it can read and change the open app model.
 
 It is meant to grow into a toolbox (`ToDo.md`):
 
 | # | Tool | Status |
 |---|---|---|
-| 1 | **Entity Name Changer**: rename an entity and everything named after it | Built, being tested in Studio Pro |
-| 2 | Prefix updater: list naming prefixes and bulk-rename them | Planned |
+| 1 | **NameChanger**: rename an entity and everything named after it | Built, being tested in Studio Pro |
+| 2 | **Prefixer**: rename or remove a document prefix per document type, with every reference (§11) | Built, to be tested in Studio Pro |
 | 3 | CSS class searcher: find, add or remove CSS classes across pages | Planned |
 | 4 | Microflow color palette: color action activities based on markers | Planned |
 
-### The problem the Entity Name Changer solves
+Tool names are one PascalCase word that says what the tool does (NameChanger, Prefixer). The same name is the pane title, the menu caption and the `src/` folder.
 
-Renaming an entity, say `Order` to `Purchase`, leaves every derived name behind: `ACT_Order_Save`, `$OrderList`, page parameters, associations such as `Order_Customer`. The Entity Name Changer renames those too.
+### The problem the NameChanger solves
+
+Renaming an entity, say `Order` to `Purchase`, leaves every derived name behind: `ACT_Order_Save`, `$OrderList`, page parameters, associations such as `Order_Customer`. The NameChanger renames those too.
 
 Studio Pro also updates **no references at all** when something is renamed through the API, not even to the entity itself. So the tool records every rename it makes and rewrites every reference to it.
 
@@ -28,23 +30,31 @@ Studio Pro
  ├─ loads dist/BGS-UtilityTools/manifest.json
  │
  ├─ main.js  (src/main.ts), runs at startup
- │    ├─ registers the dockable pane "Entity Name Changer"
- │    ├─ Extensions ▸ BGS-UtilityTools ▸ Entity Name Changer → opens the pane
+ │    ├─ registers the dockable panes "NameChanger" and "Prefixer"
+ │    ├─ Extensions ▸ BGS-UtilityTools ▸ NameChanger / Prefixer → opens that pane
  │    └─ "Rename entity…" on domain models (App Explorer + editor) → opens the pane with that module selected
- │         (EntityNameChanger/contextMenu.ts; the module reaches the pane via messagePassing, paneMessages.ts)
+ │         (NameChanger/contextMenu.ts; the module reaches the pane via messagePassing, paneMessages.ts)
  │
- └─ dockablepane.js  (src/EntityNameChanger/main.ts), runs inside the pane
+ ├─ prefixerpane.js  (src/Prefixer/main.ts), the Prefixer pane (§11)
+ │
+ └─ namechangerpane.js  (src/NameChanger/main.ts), runs inside the pane
       ├─ main.ts                   wiring only: Studio Pro APIs in, view and controller out
       ├─ ui/pane.html, PaneView.ts the DOM, built on the BGS-UtilityTools design system (src/shared/design)
-      ├─ EntityNameChangerPane.ts  controller without the DOM: load, pick, preselect, validate, rename, report
+      ├─ NameChangerPane.ts        controller without the DOM: load, pick, preselect, validate, rename, report
       ├─ moduleModel.ts            modules and entities for the pickers; skips Marketplace modules and System
       ├─ renameService.ts          builds the context, updaters and report for one rename and runs the job
-      ├─ framework/                the rename job: steps, plans, rename map, report
+      ├─ framework/                the entity rename job: steps, plans, report
       ├─ updaters/                 one updater per document type and phase; updaterRegistry.ts wires them
       └─ ui/runLog.ts              turns the report into the run log
 ```
 
+**Shared code** (`src/shared`), used by both tools:
+- `shared/rename/`: the generic rename job. Runner (`RenameJob.ts`: `runJob`, stages, batches), `JobScope`, `JobReport`, `QualifiedNameRenames`, `DocumentNameRegistry`, `ReferenceIndex`, `ReferenceUpdater` and `createReferenceUpdaters`, `existingReferences` (one save per unit), `JobTimings`, `UnitInfoCache`, `loadInScope`, run log groups, reserved names, Marketplace modules, and `rewrite/` (walker, qualified-name rewrite).
+- `shared/design/`: the design system code. Styles, `mountPane` (fills the `[data-bgs-mark]`, `[data-bgs-runlog]` and `[data-bgs-footer]` slots), `RunLogView` with `runLog.html` and the run log model, `footer.html` (the credits), `forms.ts` (selects, status messages), theme, DOM helpers.
+- Every pane: the header reads `BGS-UtilityTools - ToolName` next to the BGS mark (the product name in `bgs-pane-title__product`), and the credits footer ends the pane.
+
 **Pane behaviour:**
+- Before a run, both tools ask a Studio Pro confirmation (`ui.messageBoxes.ask`, warning) that ends with the shared commit warning (`shared/design/confirm.ts`). The pane is busy from the question on, so a second submit can't ask again.
 - After a successful rename, the entity is renamed in the loaded list (no reload), and both pickers are reset to empty.
 - A context-menu preselect reloads the entities first, so new entities are listed.
 - Clicking a run log row opens that document (`ui.editors.editDocument`).
@@ -66,9 +76,9 @@ Studio Pro
 
 ## 4. The rename job
 
-`renameService.runEntityRename` builds a `RenameContext` and the updaters (`updaters/updaterRegistry.ts`, the only place that touches `app.model`). It then runs `framework/RenameJob.ts` in Studio Pro's progress dialog.
+`renameService.runEntityRename` builds a `RenameContext` and the updaters (`updaters/updaterRegistry.ts`, the only place that touches `app.model`). It then runs `framework/EntityRenameJob.ts` in Studio Pro's progress dialog, on the shared runner (`shared/rename/RenameJob.ts`).
 - Each step lists its units with `getUnitsInfo` and skips Marketplace modules and System.
-- Units are loaded in batches of 100 (`RenamePlanner.ts`). Each step drops units it has no work for (`accepts`) before batching, so batches are full.
+- Units are loaded in batches of 100 (`shared/rename/RenamePlanner.ts`). Each step drops units it has no work for (`accepts`) before batching, so batches are full.
 - API calls run one after another, never in parallel (lead decision).
 
 | Phase | What it does |
@@ -115,9 +125,9 @@ Documents that hold text mirroring something external get an `onlyProperties` al
 
 ### Result
 
-`framework/RenameReport.ts` collects what changed, was skipped or failed. `ui/runLog.ts` shows it grouped as Entity, Failed, Renamed, Updated, Skipped, Navigation, Message definitions, Code and reports, and Timings.
+`framework/RenameReport.ts` (a `JobReport` plus the entity) collects what changed, was skipped or failed. `ui/runLog.ts` shows it grouped as Entity, Failed, Renamed, Updated, Skipped, Navigation, Message definitions, Code and reports, and Timings.
 
-**Timings** (`framework/JobTimings.ts`): `instrumentModel` wraps `app.model` so every API call is timed per progress step. The folded Timings group shows the dialog total, the time between steps, the API calls over all steps, and each step slowest first (calls, units, and "other": time outside API calls). Its rows have the `info` tone: never counted, hidden by "Only problems".
+**Timings** (`shared/rename/JobTimings.ts`): `instrumentModel` wraps `app.model` so every API call is timed per progress step. The folded Timings group shows the dialog total, the time between steps, the API calls over all steps, and each step slowest first (calls, units, and "other": time outside API calls). Its rows have the `info` tone: never counted, hidden by "Only problems".
 
 The run log warns when:
 - navigation may point to renamed pages, microflows or nanoflows
@@ -197,6 +207,7 @@ Checked and not relevant (no entity references): image and icon collections, reg
 - **No reference is ever updated by Studio Pro** after a rename through the API; the tool rewrites them all.
 - **Documents are checked only on save.** Hence the phase order, the reference order and the refresh pass.
 - **The typings don't always match runtime.** Rules have no `parameters` list, and nanoflows hold their parameters only in the object collection. Code guards against missing properties.
+- **`getModulesTree()` keeps old names** of documents renamed through the API (Prefixer testing, 2026-11-02). The Prefixer puts its session's renames over every tree read (`shared/rename/RenamedDocumentNames.ts`). The NameChanger still reads the tree as it is (document name checks in Preparing). UNVERIFIED: when the tree catches up.
 - **`loadAll` loads 10 units by default.** The job always passes the count it wants.
 - **API cost (lead's timings):** `loadAll` ~0.5 s per call regardless of units, `save` ~0.11 s per unit, `resolve` and `getUnitsInfo` a few ms. Fewer calls matter more than fewer units.
 - **Clicking a run log row works:** `editDocument` accepts the unit `$ID`.
@@ -214,7 +225,7 @@ Checked and not relevant (no entity references): image and icon collections, reg
 Marked `UNVERIFIED:` in the code, and to be confirmed in Studio Pro.
 
 **Model shape:**
-- Element proxies enumerate their properties with `Object.keys`; the generic walker depends on this (`elementWalker.ts`).
+- Element proxies enumerate their properties with `Object.keys`; the generic walker depends on this (`shared/rename/rewrite/elementWalker.ts`).
 - Association `parent`/`child` may be an `$ID` or a qualified name; both are checked.
 - Sequence flow origins are object `$ID`s, and flows inside loops are also in `flow.flows`.
 - Which of a microflow's two parameter lists is leading; both are kept in sync.
@@ -256,15 +267,15 @@ Marked `UNVERIFIED:` in the code, and to be confirmed in Studio Pro.
 - **Used here:**
   - `app.model.*`
   - `ui.panes`, `ui.extensionsMenu`, `ui.appExplorer`/`ui.documents` (context menus)
-  - `ui.dialogs` (progress dialog), `ui.editors`, `ui.preferences`, `ui.messagePassing`
+  - `ui.dialogs` (progress dialog), `ui.editors`, `ui.preferences`, `ui.messagePassing`, `ui.messageBoxes` (confirmation before a run)
 - **Units and elements:** units are documents that load on their own (domain model, microflow, page); elements live inside them.
   - `getUnitsInfo()` is cheap metadata.
   - `loadAll(filter, max)` loads units; **max defaults to 10**.
   - `load`/`resolve` fetch one unit or element.
   - `projects.getModulesTree()` lists modules, folders and documents.
 - **Typed proxies:** every object has `$Type` (e.g. `"Microflows$RetrieveAction"`) and `$ID`; `switch` on `$Type` narrows the type.
-- **References are strings:** qualified names such as `"MyModule.Order"` (`shared/qualifiedNameRewrite.ts`).
-- **Expressions are strings:** XPath and microflow expressions too (`shared/variableRewrite.ts`, which skips quoted literals).
+- **References are strings:** qualified names such as `"MyModule.Order"` (`shared/rename/rewrite/qualifiedNameRewrite.ts`).
+- **Expressions are strings:** XPath and microflow expressions too (`NameChanger/updaters/shared/variableRewrite.ts`, which skips quoted literals).
 - **Writing:** set properties, then `await save(unit)`.
 
 ---
@@ -276,14 +287,33 @@ build-extension.mjs        esbuild entry points and deploy target (appDir)
 build.helpers.mjs          esbuild config, copy-manifest and copy-to-app plugins
 vitest.config.ts           unit test config
 ToDo.md                    roadmap
-src/manifest.json          main script and UI entry points
-src/main.ts                pane, Extensions menu, domain model context menus
+src/manifest.json          main script and UI entry points (namechangerpane, prefixerpane)
+src/main.ts                panes, Extensions menu, domain model context menus
 src/global.d.ts            .html/.css/.svg imports as strings
 src/shared/design/         BGS-UtilityTools design system: tokens.css, bundle.css (incl. run log), bgs-mark.svg,
-                           theme, pane mount, DOM helpers, status
-src/EntityNameChanger/
+                           theme, pane mount, DOM helpers, status, forms, runLog (model), RunLogView + runLog.html,
+                           footer.html
+src/shared/rename/         generic rename job: RenameJob (runner, stages), RenamePlanner (batches), JobScope,
+                           JobReport, QualifiedNameRenames, DocumentNameRegistry, ReferenceIndex, ReferenceUpdater,
+                           referenceTypes, existingReferences, JobTimings, UnitInfoCache, loadInScope,
+                           runLogGroups, names, modules, types
+  rewrite/                 elementWalker, qualifiedNameRewrite
+src/Prefixer/              §11
   main.ts                  pane entry point (wiring only)
-  EntityNameChangerPane.ts pane controller
+  PrefixerPane.ts          pane controller
+  prefixModel.ts           modules tree → documents and prefixes per type group
+  prefixRename.ts          prefix rule, new names, name checks
+  validation.ts            new prefix and request checks
+  documentTypes.ts         renamable types, groups, risks
+  referenceTypes.ts        the Prefixer's reference pass and allow-lists
+  prefixService.ts         builds and runs one prefix job
+  framework/               PrefixPrepareStep, MarketplaceScanStep, PrefixPlanStep, prefixPlanner, PrefixPlan,
+                           RenameCheckStep, PrefixJobState, domainNames
+  updaters/                DocumentRenamer, updaterRegistry
+  ui/                      pane.html, PaneView.ts (DOM), runLog.ts (report → run log)
+src/NameChanger/
+  main.ts                  pane entry point (wiring only)
+  NameChangerPane.ts       pane controller
   contextMenu.ts           "Rename entity…" on domain models
   paneMessages.ts          main ↔ pane messages (module preselect, paneReady handshake)
   entityPicker.ts          entity options for the pickers
@@ -291,10 +321,8 @@ src/EntityNameChanger/
   validation.ts            request and name checks
   renameService.ts         builds and runs one rename job
   ui/                      pane.html, PaneView.ts (DOM), runLog.ts (report → run log)
-  framework/               RenameJob, RenamePlanner (batches), RenameContext, PrepareStep, EntityRenameStep,
-                           NamingPolicy, QualifiedNameRenames, DocumentNameRegistry, DocumentRenamePlan,
-                           AssociationRenamePlan, ReferenceIndex, RenameReport, MessageDefinitionUsage,
-                           JobTimings, UnitInfoCache, types
+  framework/               EntityRenameJob, RenameContext, PrepareStep, EntityRenameStep, NamingPolicy,
+                           DocumentRenamePlan, AssociationRenamePlan, RenameReport, MessageDefinitionUsage
   updaters/
     updaterRegistry.ts     every updater per phase, REFERENCE_DOCUMENT_TYPES, EXCLUDED_DOCUMENT_TYPES
     microflows/            FlowUpdater (microflows, nanoflows, rules), MicroflowHelper, ReferenceResolver,
@@ -303,13 +331,55 @@ src/EntityNameChanger/
     domainModels/          AssociationUpdater, associationRename, sharedNames
     documents/             DocumentUpdater + an inspector per type: workflows, mappings, JSON structures,
                            message definitions, datasets, view entity sources, Java/JS actions, published services
-    references/            ReferenceUpdater (qualified-name rewrite, optional allow-list)
     refresh/               RefreshUpdater (extra save of pages and snippets)
-    shared/                elementWalker, qualifiedNameRewrite, variableRewrite, urlPlaceholders, renameDocument
-src/UnitTests/             mirrors src/; helpers/ holds fakes, builders and FakeMessaging
+    shared/                variableRewrite, urlPlaceholders, renameDocument
+src/UnitTests/             mirrors src/; shared/helpers/ holds the generic fakes, NameChanger/helpers/ the
+                           entity context, builders and FakeMessaging, Prefixer/helpers/ the tree and model fakes
 ```
 
 ### Machine-specific paths
 
 - `appDir` in `build-extension.mjs` points to a Mendix app on this machine. If it doesn't exist, the build doesn't deploy.
-- `.vscode/launch.json` points to `C:\Users\Thom\Mendix\...` and Studio Pro 11.12.2, while the API targets 11.12.4. Reading both from an environment variable or a local config would help.
+- `.vscode/launch.json` points to `C:\Users\Thom\Mendix\...` and Studio Pro 11.12.2. Reading both from an environment variable or a local config would help.
+
+---
+
+## 11. The Prefixer
+
+A pane (Extensions ▸ BGS-UtilityTools ▸ Prefixer) that renames or removes a document prefix across the app's own modules, and rewrites every reference to the renamed documents.
+
+**The prefix rule (lead):**
+- 1–4 capital letters A–Z before the first `_`, with something after it. `ACT_Order_Save` and `ACT_Save` have `ACT`; `Act_Order_Save`, `V2_Order_Save` and `ACT_` have none.
+- A prefix belongs to one type group. Microflows and nanoflows share a group; every other document type is its own. `ACT_` on flows and on pages are separate dropdown entries.
+- The new prefix follows the same rule; the input is uppercased as it is typed. "Remove prefix" turns `ACT_Order_Save` into `Order_Save`.
+
+**Pane:** a grouped dropdown (`ACT_ (123)` under "Microflows & nanoflows"), the new prefix, "Remove prefix", an example line, then a Studio Pro confirmation (`ui.messageBoxes.ask`) before the run. After a run with changes, the prefixes are reloaded and the form is reset.
+
+### The job (`prefixService.runPrefixRename`)
+
+| Step | What it does |
+|---|---|
+| **Preparing** | `getModulesTree()`, with this session's renames put over it (`RenamedDocumentNames`, filled after every run) → document names (`DocumentNameRegistry`), the candidates (chosen group, old prefix, own modules), the Marketplace modules and the document template count. Loads own domain models and module security for entity, association and module role names. Lists every model API the job uses, so a listing failure stops the job before anything changes. |
+| **Checking Marketplace modules** | Read-only, never saves. Loads the Marketplace modules' documents of the reference types and records which candidates they reference. |
+| **Planning renames** | Metadata only, no API calls. Per candidate, the first reason that applies skips it: not listed by its API, invalid or reserved new name, old or new name equal to an entity, association or module role, used by a Marketplace document, new name existed at the start or is taken in any case. Otherwise the rename is planned and recorded in `QualifiedNameRenames`. The start-name check means renames never chain. |
+| **Renaming …** | One `DocumentRenamer` step per type of the group. Sets the name and, for types in the reference pass, rewrites references to renames that exist already, its own included, in the same save. Load failures fail their units and the job goes on. |
+| **Checking renames** | A planned rename that wasn't saved is dropped from `QualifiedNameRenames`, so references keep the old name, which still exists. |
+| **Updating references in …** | `PREFIX_REFERENCE_DOCUMENT_TYPES` (`referenceTypes.ts`): enumerations, domain models, Java/JS actions, connector types, connectors, authentications, consumed services, imported web services, database connections, flows, pages, snippets, layouts, page templates, building blocks, menus, workflows, mappings, message definitions, datasets, scheduled events, task queues, published services, business event services. Allow-lists add constant fields (connection strings, proxy settings, credentials, `Rest$ConstantValue.value`); a `Type$Element.key` entry limits a key to one element type. Units saved up to date in the rename phase are skipped. |
+
+No refresh pass: no parameters are renamed. When the run stops after documents were renamed, the report is marked incomplete.
+
+**Run log:** Failed, Skipped (one row per document with the reason), Renamed, Updated, Check yourself, Timings. "Check yourself" has a row per risk of the renamed types (`documentTypes.ts`): navigation, app settings, constant values in configurations and the Portal, action code, Java proxies, report widgets, scheduled events, running workflows, queued tasks, theme images, API clients, and document templates.
+
+### Not handled (manual checks)
+
+Navigation, App Settings (after startup, before shutdown, health check, workflow settings), constant values per configuration and in Portal environments, Java/JS code and Java proxies, report widgets, Portal scheduled event settings, workflow instances and queued tasks in deployed environments, theme style paths to images, and published service clients. Marketplace modules and System are never changed; view entity sources, document templates and custom blob documents are never renamed.
+
+### Open assumptions (UNVERIFIED, in the code)
+
+- `getModulesTree()` documents carry the same `$ID`/`$Type` as `getUnitsInfo()`, and modules carry `fromAppStore`.
+- `name` + `save` renames every type in `RENAMABLE_DOCUMENT_TYPES`; untested so far for constants, enumerations, image and icon collections, menus, queues, scheduled events, connectors, authentications and consumed services.
+- Document names follow the entity name rules, are unique case-insensitively within a module across types, and the reserved words apply.
+- Every reference is a qualified-name string: `@Module.Constant`, `Module.Enum.Value`, `Module.Collection.Image`, pluggable widget properties, and each new allow-list field.
+- No stale consistency errors after a run without a refresh pass; a unit whose last save is in the rename phase is fine.
+- A second `uiEntrypoint` (`prefixerpane`) loads its own bundle; `messageBoxes.ask` works from a pane; `editDocument` opens every document type.
+- What Studio Pro does with the code file of a renamed Java or JavaScript action.

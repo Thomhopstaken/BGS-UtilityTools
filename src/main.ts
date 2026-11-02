@@ -3,24 +3,38 @@ import {
     IComponent,
     getStudioProApi,
 } from "@mendix/extensions-api";
-import { registerEntityRenameMenus } from "./EntityNameChanger/contextMenu";
+import { registerEntityRenameMenus } from "./NameChanger/contextMenu";
 
-// Extension entry point: registers the pane, the Extensions menu and the domain model context menus.
+// Extension entry point: registers the panes, the Extensions menu and the domain model context menus.
 export const component: IComponent = {
     async loaded(componentContext: ComponentContext) {
         const studioPro = getStudioProApi(componentContext);
 
-        // uiEntrypoint "dockablepane" is the bundle built from EntityNameChanger/main.ts
-        const panehandle = await studioPro.ui.panes.register(
+        // uiEntrypoint "namechangerpane" is the bundle built from NameChanger/main.ts
+        const nameChangerHandle = await studioPro.ui.panes.register(
             {
-                title: "Entity Name Changer",
+                title: "NameChanger",
                 initialPosition: "right",
             },
             {
                 componentName: "extension/BGS-UtilityTools",
-                uiEntrypoint: "dockablepane",
+                uiEntrypoint: "namechangerpane",
             },
         );
+
+        // uiEntrypoint "prefixerpane" is the bundle built from Prefixer/main.ts
+        // UNVERIFIED: a second uiEntrypoint next to "namechangerpane" loads its own bundle.
+        const prefixerHandle = await studioPro.ui.panes.register(
+            {
+                title: "Prefixer",
+                initialPosition: "right",
+            },
+            {
+                componentName: "extension/BGS-UtilityTools",
+                uiEntrypoint: "prefixerpane",
+            },
+        );
+        console.info("panes registered: NameChanger, Prefixer");
 
         // Add a menu item to the Extensions menu
         await studioPro.ui.extensionsMenu.add({
@@ -28,10 +42,17 @@ export const component: IComponent = {
             caption: "BGS-UtilityTools",
             subMenus: [
                 {
-                    menuId: "BGS-UtilityTools.ShowMenu",
-                    caption: "Entity Name Changer",
+                    menuId: "BGS-UtilityTools.NameChangerMenu",
+                    caption: "NameChanger",
                     action: async () => {
-                        await studioPro.ui.panes.open(panehandle);
+                        await studioPro.ui.panes.open(nameChangerHandle);
+                    },
+                },
+                {
+                    menuId: "BGS-UtilityTools.PrefixerMenu",
+                    caption: "Prefixer",
+                    action: async () => {
+                        await studioPro.ui.panes.open(prefixerHandle);
                     },
                 },
             ],
@@ -45,7 +66,7 @@ export const component: IComponent = {
                 const infos = await studioPro.app.model.domainModels.getUnitsInfo();
                 return infos.find((info) => info.$ID === documentId)?.moduleName ?? null;
             },
-            openPane: () => studioPro.ui.panes.open(panehandle),
+            openPane: () => studioPro.ui.panes.open(nameChangerHandle),
             messaging: studioPro.ui.messagePassing,
         });
     },

@@ -2,7 +2,7 @@
 
 ## What this is
 
-BGS-UtilityTools is a **Mendix Studio Pro web extension** written in TypeScript on top of `@mendix/extensions-api` (the Web Extensibility API, currently `0.11.4-mendix.11.12.4`). It adds a "BGS-UtilityTools" entry to Studio Pro's Extensions menu. The only tool so far is the **Entity Name Changer**, a dockable pane that renames a domain-model entity and all the usages of the entity throughout the application in components. more coming later.
+BGS-UtilityTools is a **Mendix Studio Pro web extension** written in TypeScript on top of `@mendix/extensions-api` (the Web Extensibility API, currently `0.11.2-mendix.11.12.2`). It adds a "BGS-UtilityTools" entry to Studio Pro's Extensions menu. The tools so far are the **NameChanger**, a dockable pane that renames a domain-model entity and all the usages of the entity throughout the application in components, and the **Prefixer**, which renames or removes a document prefix. more coming later.
 
 you are a developer and i am the lead. if you are unsure about how to proceed, you MUST ask me.
 give precise and concise anwsers, do not add more words than needed.
