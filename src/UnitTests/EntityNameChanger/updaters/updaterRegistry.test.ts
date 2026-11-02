@@ -46,6 +46,11 @@ const API_NAMES = [
   "consumedODataServices",
   "mlMappingDocuments",
   "viewEntitySourceDocuments",
+  "connectorTypes",
+  "databaseConnections",
+  "excelDataImporterTemplates",
+  "businessEventServices",
+  "entityChangeDataCaptureServices",
 ];
 const model = Object.fromEntries(API_NAMES.map((name) => [name, { api: name }])) as unknown as AppModel;
 
@@ -98,9 +103,12 @@ const REFERENCE_LABELS = [
   "References in domain models",
   "References in Java actions",
   "References in JavaScript actions",
+  "References in connector types",
   "References in consumed REST services",
   "References in consumed OData services",
   "References in ML model mappings",
+  "References in database connections",
+  "References in Excel importer templates",
   "References in microflows",
   "References in nanoflows",
   "References in rules",
@@ -118,6 +126,8 @@ const REFERENCE_LABELS = [
   "References in published REST services",
   "References in published OData services",
   "References in published web services",
+  "References in business event services",
+  "References in change data capture services",
 ];
 
 const REFRESH_LABELS = ["Refresh pages", "Refresh snippets"];
@@ -251,15 +261,19 @@ describe("createUpdaters", () => {
 
   it("updates references in view entity queries, domain models, then Java/JavaScript actions, consumed services and ML mappings, before flows and pages", () => {
     const labels = create().referenceUpdaters.map((u) => u.label);
-    expect(labels.slice(0, 7)).toEqual([
+    expect(labels.slice(0, 10)).toEqual([
       "References in view entity source documents",
       "References in domain models",
       "References in Java actions",
       "References in JavaScript actions",
+      "References in connector types",
       "References in consumed REST services",
       "References in consumed OData services",
       "References in ML model mappings",
+      "References in database connections",
+      "References in Excel importer templates",
     ]);
+    expect(labels.indexOf("References in Excel importer templates")).toBeLessThan(labels.indexOf("References in import mappings"));
     expect(labels.indexOf("References in ML model mappings")).toBeLessThan(labels.indexOf("References in microflows"));
     expect(labels.indexOf("References in domain models")).toBeLessThan(labels.indexOf("References in pages"));
   });
@@ -452,6 +466,130 @@ describe("createUpdaters", () => {
       "SELECT o.Total AS Total FROM MyModule.Purchase AS o JOIN o/MyModule.Purchase_Customer/MyModule.Customer AS c JOIN MyModule.OrderLine AS l WHERE c.Name = 'MyModule.Order'",
     );
     expect(document.name).toBe("OrderOverview");
+  });
+
+  it("rewrites only entity and attribute references in database connections, never SQL or settings", async () => {
+    const groups = create();
+    const mapping = {
+      $Type: "DatabaseConnector$TableMapping",
+      entity: "MyModule.Order",
+      tableName: "MyModule.Order",
+      columns: [{ $Type: "DatabaseConnector$ColumnMapping", attribute: "MyModule.Order.Total", columnName: "MyModule.Order" }],
+    };
+    const query = { $Type: "DatabaseConnector$DatabaseQuery", name: "GetOrders", query: "SELECT * FROM MyModule.Order", tableMappings: [mapping], parameters: [] };
+    const connection = { $Type: "DatabaseConnector$DatabaseConnection", name: "Db", connectionString: "jdbc:MyModule.Order", queries: [query] };
+    const result = await byLabel("References in database connections", groups).update(
+      connection as unknown as Primitives.UnitBase,
+      fakeUnitInfo("db", "DatabaseConnector$DatabaseConnection", "MyModule", "Db"),
+    );
+    expect(result).toMatchObject({ changed: true, updatedReferences: 2 });
+    expect([mapping.entity, mapping.columns[0].attribute]).toEqual(["MyModule.Purchase", "MyModule.Purchase.Total"]);
+    expect([query.query, mapping.tableName, mapping.columns[0].columnName, connection.connectionString]).toEqual([
+      "SELECT * FROM MyModule.Order",
+      "MyModule.Order",
+      "MyModule.Order",
+      "jdbc:MyModule.Order",
+    ]);
+  });
+
+  it("rewrites the sheet entity and column attributes in Excel importer templates", async () => {
+    const groups = create();
+    const reference = { $Type: "ExcelDataImporter$NameReference", referencedName: "MyModule.Order" };
+    const column = { $Type: "ExcelDataImporter$ColumnAttributeMapping", attribute: "MyModule.Order.Total", reference };
+    const sheet = { $Type: "ExcelDataImporter$ExcelSheet", entity: "MyModule.Order", columnAttributeMappings: [column] };
+    const template = {
+      $Type: "ExcelDataImporter$Template",
+      name: "ImportOrders",
+      fileName: "MyModule.Order.xlsx",
+      contents: { $Type: "ExcelDataImporter$ExcelTemplateContents", sheets: [sheet] },
+    };
+    const result = await byLabel("References in Excel importer templates", groups).update(
+      template as unknown as Primitives.UnitBase,
+      fakeUnitInfo("xl", "ExcelDataImporter$Template", "MyModule", "ImportOrders"),
+    );
+    expect(result).toMatchObject({ changed: true, updatedReferences: 2, renamedTo: null });
+    expect([sheet.entity, column.attribute]).toEqual(["MyModule.Purchase", "MyModule.Purchase.Total"]);
+    expect([template.name, template.fileName, reference.referencedName]).toEqual(["ImportOrders", "MyModule.Order.xlsx", "MyModule.Order"]);
+  });
+
+  it("rewrites entity and microflow references in business event services, keeping message names", async () => {
+    const renames = QualifiedNameRenames.forEntity(context);
+    renames.addDocument("MyModule", "ACT_Order_Publish", "ACT_Purchase_Publish");
+    const groups = create(renames);
+    const operation = {
+      $Type: "BusinessEvents$ServiceOperation",
+      entity: "MyModule.Order",
+      microflow: "MyModule.ACT_Order_Publish",
+      messageName: "MyModule.Order",
+      operation: "publish",
+    };
+    const asyncApi = "channels: MyModule.Order";
+    const service = { $Type: "BusinessEvents$BusinessEventService", name: "BES", document: asyncApi, operationImplementations: [operation] };
+    const result = await byLabel("References in business event services", groups).update(
+      service as unknown as Primitives.UnitBase,
+      fakeUnitInfo("be", "BusinessEvents$BusinessEventService", "MyModule", "BES"),
+    );
+    expect(result).toMatchObject({ changed: true, updatedReferences: 2 });
+    expect([operation.entity, operation.microflow]).toEqual(["MyModule.Purchase", "MyModule.ACT_Purchase_Publish"]);
+    expect([operation.messageName, service.document]).toEqual(["MyModule.Order", asyncApi]);
+  });
+
+  it("rewrites entity, association and attribute references in change data capture services, keeping exposed names", async () => {
+    const renames = QualifiedNameRenames.forEntity(context);
+    renames.addDocument("MyModule", "Order_Customer", "Purchase_Customer");
+    const groups = create(renames);
+    const association = {
+      $Type: "ChangeDataCapture$AssociationProperty",
+      association: "MyModule.Order_Customer",
+      exposedName: "MyModule.Order_Customer",
+      versionedProperty: null,
+    };
+    const attribute = { $Type: "ChangeDataCapture$AttributeProperty", attribute: "MyModule.Order.Total", exposedName: "MyModule.Order", versionedProperty: null };
+    const source = {
+      $Type: "ChangeDataCapture$EntityChangeSource",
+      entity: "MyModule.Order",
+      exposedName: "MyModule.Order",
+      properties: [association, attribute],
+      versionedSource: null,
+    };
+    const service = { $Type: "ChangeDataCapture$EntityChangeDataCaptureService", name: "CDC", serviceName: "MyModule.Order", sources: [source], baseline: null };
+    const result = await byLabel("References in change data capture services", groups).update(
+      service as unknown as Primitives.UnitBase,
+      fakeUnitInfo("cdc", "ChangeDataCapture$EntityChangeDataCaptureService", "MyModule", "CDC"),
+    );
+    expect(result).toMatchObject({ changed: true, updatedReferences: 3 });
+    expect([source.entity, association.association, attribute.attribute]).toEqual([
+      "MyModule.Purchase",
+      "MyModule.Purchase_Customer",
+      "MyModule.Purchase.Total",
+    ]);
+    expect([source.exposedName, association.exposedName, attribute.exposedName, service.serviceName]).toEqual([
+      "MyModule.Order",
+      "MyModule.Order_Customer",
+      "MyModule.Order",
+      "MyModule.Order",
+    ]);
+  });
+
+  it("rewrites renamed Java actions in connector types only", async () => {
+    const renames = QualifiedNameRenames.forEntity(context);
+    renames.addDocument("MyModule", "JA_GetOrder", "JA_GetPurchase");
+    const groups = create(renames);
+    const connectorAction = { $Type: "ConnectorKit$ConnectorAction", name: "GetOrder", caption: "MyModule.JA_GetOrder", javaAction: "MyModule.JA_GetOrder" };
+    const type = { $Type: "ConnectorKit$ConnectorType", name: "Crm", description: "MyModule.Order", connectorActions: [connectorAction], connectorProperties: [] };
+    const result = await byLabel("References in connector types", groups).update(
+      type as unknown as Primitives.UnitBase,
+      fakeUnitInfo("ct", "ConnectorKit$ConnectorType", "MyModule", "Crm"),
+    );
+    expect(result).toMatchObject({ changed: true, updatedReferences: 1 });
+    expect([connectorAction.javaAction, connectorAction.caption, type.description]).toEqual([
+      "MyModule.JA_GetPurchase",
+      "MyModule.JA_GetOrder",
+      "MyModule.Order",
+    ]);
+    expect(EXCLUDED_DOCUMENT_TYPES.map((e) => e.label)).toEqual(
+      expect.arrayContaining(["Database connections, Excel importer templates, connectors", "Business event and change data capture services"]),
+    );
   });
 
   it("rewrites only entity and attribute references in ML model mappings, never renaming them", async () => {

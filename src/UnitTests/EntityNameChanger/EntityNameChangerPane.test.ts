@@ -126,6 +126,53 @@ describe("EntityNameChangerPane.selectModule", () => {
   });
 });
 
+describe("EntityNameChangerPane.preselectModule", () => {
+  it("reloads and selects the module with its entities", async () => {
+    const fresh = data({ MyModule: ["Order", "Customer", "Invoice2"], Other: ["Invoice"] });
+    const { view, pane, loadData } = setup(undefined, [data({ MyModule: ["Order", "Customer"], Other: ["Invoice"] }), fresh]);
+    await pane.load();
+    await pane.preselectModule("MyModule");
+    expect(loadData).toHaveBeenCalledTimes(2);
+    expect(view.modules.at(-1)).toEqual({ names: ["MyModule", "Other"], selected: "MyModule" });
+    expect(view.entities.at(-1)).toEqual({ options: fresh.byModule.get("MyModule"), selectedId: undefined });
+  });
+
+  it.each([
+    ["System", "System is a Marketplace module or System; its entities can't be renamed."],
+    ["Empty", "Module Empty has no entities to rename."],
+  ])("warns for module %s and clears the selection", async (moduleName, text) => {
+    const { view, pane } = setup();
+    await pane.load();
+    pane.selectModule("MyModule");
+    await pane.preselectModule(moduleName);
+    expect(view.outcome).toEqual([{ tone: "warning", text }]);
+    expect(view.modules.at(-1)).toEqual({ names: ["MyModule", "Other"], selected: undefined });
+    expect(view.entities.at(-1)).toEqual({ options: null, selectedId: undefined });
+  });
+
+  it("shows an error when the reload fails", async () => {
+    const { view, pane, loadData } = setup();
+    await pane.load();
+    loadData.mockRejectedValueOnce("offline");
+    const entities = view.entities.length;
+    await pane.preselectModule("MyModule");
+    expect(view.outcome).toEqual([{ tone: "error", text: "Could not reload entities: offline" }]);
+    expect(view.entities.length).toBe(entities);
+  });
+
+  it("is ignored while a rename runs", async () => {
+    let finish!: (r: RenameRunResult) => void;
+    const { view, pane, loadData } = await loadedWithRequest("Purchase", () => new Promise((resolve) => (finish = resolve)));
+    const running = pane.submit();
+    const modules = view.modules.length;
+    await pane.preselectModule("Other");
+    expect(view.modules.length).toBe(modules);
+    expect(loadData).toHaveBeenCalledTimes(1);
+    finish(ran("UserCancelled", false));
+    await running;
+  });
+});
+
 describe("EntityNameChangerPane.submit", () => {
   it.each([
     [{ moduleName: "", entityId: "", newName: "X" }, "module", "Select a module."],

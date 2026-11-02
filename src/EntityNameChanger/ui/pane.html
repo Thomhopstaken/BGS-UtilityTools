@@ -59,6 +59,7 @@
         <summary>Before you rename</summary>
         <div class="bgs-groupbox__body">
           <ul class="bgs-list">
+            <li>Right-click a domain model, in the App Explorer or its editor, and choose <span class="bgs-code">Rename entity…</span> to open this pane with its module selected.</li>
             <li>Commit your work first. A rename saves many documents at once, and version control is your clean way back.</li>
             <li>If the entity is used in a message definition, the import and export mappings using it must be mapped again afterwards. Plan time for that.</li>
             <li>Fix errors in documents that use the entity, such as retrieve activities in microflows. If a document can't be checked during planning, the rename stops before anything is changed.</li>
@@ -80,7 +81,7 @@
             <li>Message definitions of the entity inside a collection that have its name in their name; exposed names are kept</li>
             <li>The workflow parameter and the export mapping parameter, when of the entity's type and named after it</li>
             <li>The entity name in workflow texts: title, workflow name and description, task names and descriptions, and activity captions</li>
-            <li>References to everything renamed, in view entity queries (OQL), domain models, Java and JavaScript actions, consumed REST and OData services, ML model mappings, microflows, nanoflows, rules, pages, snippets, layouts, menus, workflows, mappings, message definitions, datasets, scheduled events and published services</li>
+            <li>References to everything renamed, in view entity queries (OQL), domain models, Java and JavaScript actions, connector types, consumed REST and OData services, ML model mappings, database connections, Excel importer templates, microflows, nanoflows, rules, pages, snippets, layouts, menus, workflows, mappings, message definitions, datasets, scheduled events, published services, business event services and change data capture services</li>
           </ul>
           <p>Matching is case-sensitive and replaces every occurrence of the entity name, so <span class="bgs-code">ACT_Orders_Get</span> becomes <span class="bgs-code">ACT_Purchases_Get</span>. Names of other entities are protected: renaming <span class="bgs-code">Order</span> leaves <span class="bgs-code">OrderLine</span> alone.</p>
           <p>A rename is skipped when the new name already exists; the run log counts these.</p>
@@ -98,6 +99,7 @@
             <li>Microflow, nanoflow, Java action and JavaScript action calls</li>
             <li>REST, web service, external action, ML model and import mapping calls</li>
             <li>Get workflow data</li>
+            <li>Execute database query, import Excel data and connector action calls</li>
           </ul>
           <p>Variables from other activities keep their name.</p>
         </div>
@@ -114,6 +116,8 @@
             <li>ML model mappings keep their names, which mirror the model file.</li>
             <li>Consumed REST and OData services and imported web services keep their names, which mirror the external API.</li>
             <li>Clients of published services whose exposed names were renamed. The run log warns when this applies.</li>
+            <li>Database connections, Excel importer templates, connectors, business event services and change data capture services keep their names; message and exposed names are never renamed.</li>
+            <li>Demo users in App Security that use the entity: App Security is not reachable for extensions.</li>
             <li>Navigation: menu items, home pages and the login page that point to renamed documents. The run log warns when this applies.</li>
           </ul>
           <p>Marketplace modules and System are never changed.</p>

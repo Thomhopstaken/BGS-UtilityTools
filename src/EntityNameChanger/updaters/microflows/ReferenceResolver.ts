@@ -1,5 +1,8 @@
 import type {
+  ConnectorKit,
+  DatabaseConnector,
   DomainModels,
+  ExcelDataImporter,
   JavaActions,
   JavaScriptActions,
   MLMappings,
@@ -11,7 +14,9 @@ import type {
 import type { QualifiedNameRenames } from "../../framework/QualifiedNameRenames";
 import {
   type AssociationEnds,
+  databaseQueryEntity,
   entityOfDataType,
+  excelTemplateEntity,
   type FlowReferences,
   javaActionSignature,
   mlOutputEntity,
@@ -42,6 +47,9 @@ export type ReferenceApis = {
   workflows: ResolveAccess;
   consumedRestServices: ResolveAccess;
   mlMappingDocuments: ResolveAccess;
+  databaseConnections: ResolveAccess;
+  excelDataImporterTemplates: ResolveAccess;
+  connectorTypes: ResolveAccess;
 };
 
 // Resolves referenced documents lazily, at most once per qualified name, into the shared cache.
@@ -125,6 +133,63 @@ export class ReferenceResolver {
         cache.mlOutputEntities.set(qName, mapping === null ? null : mlOutputEntity(mapping));
       }
     }
+    for (const qName of refs.databaseQueries) {
+      if (!cache.databaseQueryEntities.has(qName)) {
+        cache.databaseQueryEntities.set(qName, await this.resolveDatabaseQueryEntity(qName));
+      }
+    }
+    for (const qName of refs.excelTemplates) {
+      if (!cache.excelTemplateEntities.has(qName)) {
+        const template = await tryResolve(qName, () =>
+          this.apis.excelDataImporterTemplates.resolve<ExcelDataImporter.Template>("ExcelDataImporter$Template", qName),
+        );
+        cache.excelTemplateEntities.set(qName, template === null ? null : excelTemplateEntity(template));
+      }
+    }
+    for (const qName of refs.connectorActions) {
+      if (!cache.connectorActionEntities.has(qName)) {
+        cache.connectorActionEntities.set(qName, await this.resolveConnectorActionEntity(qName));
+      }
+    }
+  }
+
+  // UNVERIFIED: the query reference is "<connection qualified name>.<query name>".
+  private async resolveDatabaseQueryEntity(qName: string): Promise<string | null> {
+    const parts = splitMember(qName);
+    if (parts === null) {
+      return null;
+    }
+    const connection = await tryResolve(parts.owner, () =>
+      this.apis.databaseConnections.resolve<DatabaseConnector.DatabaseConnection>(
+        "DatabaseConnector$DatabaseConnection",
+        parts.owner,
+      ),
+    );
+    const entity = connection === null ? null : databaseQueryEntity(connection, parts.member);
+    console.debug(`database query ${qName}: entity ${entity}`);
+    return entity;
+  }
+
+  // UNVERIFIED: the action reference is "<connector type qualified name>.<action name>". Type parameters are not resolved.
+  private async resolveConnectorActionEntity(qName: string): Promise<string | null> {
+    const parts = splitMember(qName);
+    if (parts === null) {
+      return null;
+    }
+    const connectorType = await tryResolve(parts.owner, () =>
+      this.apis.connectorTypes.resolve<ConnectorKit.ConnectorType>("ConnectorKit$ConnectorType", parts.owner),
+    );
+    const javaActionName = connectorType?.connectorActions.find((a) => a.name === parts.member)?.javaAction ?? null;
+    if (javaActionName === null) {
+      console.debug(`connector action ${qName}: no Java action found`);
+      return null;
+    }
+    const javaAction = await tryResolve(javaActionName, () =>
+      this.apis.javaActions.resolve<JavaActions.JavaAction>("JavaActions$JavaAction", javaActionName),
+    );
+    const entity = javaAction === null ? null : javaActionSignature(javaAction).returnEntity;
+    console.debug(`connector action ${qName}: Java action ${javaActionName}, entity ${entity}`);
+    return entity;
   }
 
   // UNVERIFIED: resolve() on non-unit elements; falls back to loading all domain models once.
@@ -150,13 +215,12 @@ export class ReferenceResolver {
 
   // UNVERIFIED: the operation reference is assumed to be "<service qualified name>.<operation name>".
   private async resolveRestOperation(qName: string): Promise<Rest.RestOperation | null> {
-    const separator = qName.lastIndexOf(".");
-    if (separator <= 0) {
-      console.debug(`rest operation reference ${qName} has no service part`);
+    const parts = splitMember(qName);
+    if (parts === null) {
       return null;
     }
-    const serviceName = qName.slice(0, separator);
-    const operationName = qName.slice(separator + 1);
+    const serviceName = parts.owner;
+    const operationName = parts.member;
     const service = await tryResolve(serviceName, () =>
       this.apis.consumedRestServices.resolve<Rest.ConsumedRestService>("Rest$ConsumedRestService", serviceName),
     );
@@ -186,6 +250,16 @@ export async function loadAssociationEnds(domainModels: DomainModelLookup): Prom
   }
   console.info(`loaded ${ends.size} associations from ${units.length} domain models`);
   return ends;
+}
+
+// "Module.Owner.Member" -> owner "Module.Owner", member "Member"; null without an owner part.
+function splitMember(qName: string): { owner: string; member: string } | null {
+  const separator = qName.lastIndexOf(".");
+  if (separator <= 0) {
+    console.debug(`reference ${qName} has no owner part`);
+    return null;
+  }
+  return { owner: qName.slice(0, separator), member: qName.slice(separator + 1) };
 }
 
 async function tryResolve<T>(qName: string, resolver: () => Promise<T | null>): Promise<T | null> {

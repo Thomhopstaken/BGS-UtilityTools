@@ -1,4 +1,4 @@
-import type { DataTypes, Microflows } from "@mendix/extensions-api";
+import type { ConnectorKit, DatabaseConnector, DataTypes, ExcelDataImporter, Microflows } from "@mendix/extensions-api";
 import type { NamingPolicy } from "../../framework/NamingPolicy";
 import { isEntityQname, type RenameContext } from "../../framework/RenameContext";
 import { type RenameMap, rewriteExpression, rewriteName } from "../shared/variableRewrite";
@@ -21,6 +21,23 @@ type NamedParameter = { name: string };
 
 // Java and JavaScript action parameter mappings have the same shape.
 type CodeActionParameterMapping = Microflows.JavaActionParameterMapping | Microflows.JavaScriptActionParameterMapping;
+
+// Actions of the Database Connector, Excel importer and ConnectorKit; not in the Microflows.MicroflowAction union.
+type ModuleAction =
+  | DatabaseConnector.ExecuteDatabaseQueryAction
+  | ExcelDataImporter.ImportExcelDataAction
+  | ConnectorKit.ConnectorActionCallAction;
+
+const MODULE_ACTION_TYPES: ReadonlySet<string> = new Set([
+  "DatabaseConnector$ExecuteDatabaseQueryAction",
+  "ExcelDataImporter$ImportExcelDataAction",
+  "ConnectorKit$ConnectorActionCallAction",
+]);
+
+// UNVERIFIED: these actions show up as ActionActivity.action at runtime.
+function asModuleAction(action: Microflows.MicroflowAction): ModuleAction | null {
+  return MODULE_ACTION_TYPES.has((action as { $Type: string }).$Type) ? (action as unknown as ModuleAction) : null;
+}
 
 export class MicroflowHelper {
   readonly entityId: string;
@@ -68,6 +85,11 @@ export class MicroflowHelper {
         continue;
       }
       const action = obj.action;
+      const moduleAction = asModuleAction(action);
+      if (moduleAction !== null) {
+        collectModuleActionReference(moduleAction, result);
+        continue;
+      }
       switch (action.$Type) {
         case "Microflows$RetrieveAction":
           if (
@@ -197,6 +219,14 @@ export class MicroflowHelper {
     objectsById: Map<string, Microflows.MicroflowObject>,
     found: Set<string>,
   ): void {
+    const moduleAction = asModuleAction(action);
+    if (moduleAction !== null) {
+      if (this.isEntityQname(this.moduleActionEntity(moduleAction))) {
+        console.debug(`${moduleAction.$Type} output ${moduleAction.outputVariableName} is of type ${this.entityQname}`);
+        this.addOutput(found, moduleAction);
+      }
+      return;
+    }
     switch (action.$Type) {
       case "Microflows$CreateObjectAction":
       case "Microflows$CreateListAction":
@@ -677,7 +707,52 @@ export class MicroflowHelper {
     }
   }
 
+  // Entity of a module action's output list, from the cache; null when unknown.
+  private moduleActionEntity(action: ModuleAction): string | null {
+    switch (action.$Type) {
+      case "DatabaseConnector$ExecuteDatabaseQueryAction":
+        return action.query === null ? null : (this.references.databaseQueryEntities.get(action.query) ?? null);
+      case "ExcelDataImporter$ImportExcelDataAction":
+        return action.template === null ? null : (this.references.excelTemplateEntities.get(action.template) ?? null);
+      case "ConnectorKit$ConnectorActionCallAction":
+        return action.connectorAction === null
+          ? null
+          : (this.references.connectorActionEntities.get(action.connectorAction) ?? null);
+    }
+  }
+
+  // UNVERIFIED: dynamicQuery and the parameter values are microflow expressions.
+  private updateModuleActionUsage(action: ModuleAction): void {
+    switch (action.$Type) {
+      case "DatabaseConnector$ExecuteDatabaseQueryAction":
+        for (const mapping of [...action.parameterMappings, ...action.connectionParameterMappings]) {
+          if (mapping.value !== null) {
+            mapping.value = this.UpdateValue(mapping.value);
+          }
+        }
+        if (action.dynamicQuery !== null) {
+          action.dynamicQuery = this.UpdateValue(action.dynamicQuery);
+        }
+        break;
+      case "ExcelDataImporter$ImportExcelDataAction":
+        action.inputFileVariableName = this.UpdateVariableName(action.inputFileVariableName);
+        break;
+      case "ConnectorKit$ConnectorActionCallAction":
+        for (const mapping of action.parameterMappings) {
+          if (mapping.parameterValueExpression !== null) {
+            mapping.parameterValueExpression = this.UpdateValue(mapping.parameterValueExpression);
+          }
+        }
+        break;
+    }
+  }
+
   private updateActionUsage(action: Microflows.MicroflowAction): void {
+    const moduleAction = asModuleAction(action);
+    if (moduleAction !== null) {
+      this.updateModuleActionUsage(moduleAction);
+      return;
+    }
     switch (action.$Type) {
       case "Microflows$CreateObjectAction":
         for (const item of action.items) {
@@ -1260,6 +1335,27 @@ export class MicroflowHelper {
       default:
         break;
     }
+  }
+}
+
+// The query, template or connector action a module action needs resolved for its output type.
+function collectModuleActionReference(action: ModuleAction, refs: FlowReferences): void {
+  switch (action.$Type) {
+    case "DatabaseConnector$ExecuteDatabaseQueryAction":
+      if (action.query !== null) {
+        refs.databaseQueries.add(action.query);
+      }
+      break;
+    case "ExcelDataImporter$ImportExcelDataAction":
+      if (action.template !== null) {
+        refs.excelTemplates.add(action.template);
+      }
+      break;
+    case "ConnectorKit$ConnectorActionCallAction":
+      if (action.connectorAction !== null) {
+        refs.connectorActions.add(action.connectorAction);
+      }
+      break;
   }
 }
 

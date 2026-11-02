@@ -4,6 +4,7 @@ import { injectStyles, mountPane } from "../shared/design/pane";
 import { applyTheme } from "../shared/design/theme";
 import { EntityNameChangerPane } from "./EntityNameChangerPane";
 import { loadPaneData } from "./moduleModel";
+import { connectPane } from "./paneMessages";
 import { runEntityRename } from "./renameService";
 import markup from "./ui/pane.html";
 import { PaneView } from "./ui/PaneView";
@@ -35,5 +36,6 @@ export const component: Mx.IComponent = {
     view.onModuleChange((moduleName) => pane.selectModule(moduleName));
     view.onClearLog(() => pane.clearLog());
     await pane.load();
+    await connectPane(studioPro.ui.messagePassing, (moduleName) => pane.preselectModule(moduleName));
   },
 };

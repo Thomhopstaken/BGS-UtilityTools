@@ -71,6 +71,37 @@ export class EntityNameChangerPane {
     this.view.setEntities(moduleName === "" ? null : (this.data.byModule.get(moduleName) ?? []));
   }
 
+  // From the domain model context menu: fresh data, then the module selected and its entities listed.
+  async preselectModule(moduleName: string): Promise<void> {
+    if (this.busy) {
+      console.info(`pane: preselect '${moduleName}' ignored, a rename is running`);
+      return;
+    }
+    console.info(`pane: preselecting module '${moduleName}'`);
+    try {
+      this.data = await this.deps.loadData();
+    } catch (error: unknown) {
+      console.info(`pane: reload for preselect failed: ${error}`);
+      this.view.showOutcome({ tone: "error", text: `Could not reload entities: ${errorMessage(error)}` });
+      return;
+    }
+    const options = this.data.byModule.get(moduleName);
+    this.view.clearFieldErrors();
+    if (options === undefined) {
+      this.moduleName = "";
+      this.view.setModules([...this.data.byModule.keys()]);
+      this.view.setEntities(null);
+      const text = this.data.excludedModules.has(moduleName)
+        ? `${moduleName} is a Marketplace module or System; its entities can't be renamed.`
+        : `Module ${moduleName} has no entities to rename.`;
+      this.view.showOutcome({ tone: "warning", text });
+      return;
+    }
+    this.moduleName = moduleName;
+    this.view.setModules([...this.data.byModule.keys()], moduleName);
+    this.view.setEntities(options);
+  }
+
   async submit(): Promise<void> {
     if (this.busy) {
       console.debug("pane: submit ignored, a rename is running");

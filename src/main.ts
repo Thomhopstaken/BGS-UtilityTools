@@ -3,6 +3,7 @@ import {
     IComponent,
     getStudioProApi,
 } from "@mendix/extensions-api";
+import { registerEntityRenameMenus } from "./EntityNameChanger/contextMenu";
 
 export const component: IComponent = {
     async loaded(componentContext: ComponentContext) {
@@ -32,6 +33,18 @@ export const component: IComponent = {
                     },
                 },
             ],
+        });
+
+        // "Rename entity…" on domain models, in the App Explorer and the domain model editor
+        await registerEntityRenameMenus({
+            addExplorerMenu: (menu, documentType) => studioPro.ui.appExplorer.addContextMenu(menu, documentType),
+            addEditorMenu: (menu, documentType) => studioPro.ui.documents.addContextMenu(menu, documentType),
+            moduleOfDomainModel: async (documentId) => {
+                const infos = await studioPro.app.model.domainModels.getUnitsInfo();
+                return infos.find((info) => info.$ID === documentId)?.moduleName ?? null;
+            },
+            openPane: () => studioPro.ui.panes.open(panehandle),
+            messaging: studioPro.ui.messagePassing,
         });
     },
 };

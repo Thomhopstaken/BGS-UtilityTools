@@ -39,6 +39,9 @@ function setup(
     workflows: fakeResolveAccess(elements),
     consumedRestServices: fakeResolveAccess(elements),
     mlMappingDocuments: fakeResolveAccess(elements),
+    databaseConnections: fakeResolveAccess(elements),
+    excelDataImporterTemplates: fakeResolveAccess(elements),
+    connectorTypes: fakeResolveAccess(elements),
   };
   const cache = new ReferenceCache();
   return { apis, cache, resolver: new ReferenceResolver(apis, cache, options.renames ?? new QualifiedNameRenames()) };
@@ -145,6 +148,68 @@ describe("ReferenceResolver", () => {
     expect(cache.workflowContextEntities.get("M.NoFlow")).toBeNull();
     expect(cache.mlOutputEntities.get("M.Ml")).toBe("M.Prediction");
     expect(cache.mlOutputEntities.get("M.NoMl")).toBeNull();
+  });
+
+  it("resolves database queries as <connection>.<query>, once", async () => {
+    const { apis, cache, resolver } = setup({
+      elements: {
+        "DatabaseConnector$DatabaseConnection:M.Db": { queries: [{ name: "GetOrders", tableMappings: [{ entity: "M.Order" }] }] },
+      },
+    });
+    const refs = emptyFlowReferences();
+    refs.databaseQueries.add("M.Db.GetOrders").add("M.Db.Missing").add("NoDot").add("M.None.Query");
+    await resolver.resolveAll(refs);
+    await resolver.resolveAll(refs);
+    expect([...cache.databaseQueryEntities]).toEqual([
+      ["M.Db.GetOrders", "M.Order"],
+      ["M.Db.Missing", null],
+      ["NoDot", null],
+      ["M.None.Query", null],
+    ]);
+    expect(apis.databaseConnections.calls).toHaveLength(3);
+  });
+
+  it("resolves Excel importer templates", async () => {
+    const { cache, resolver } = setup({
+      elements: {
+        "ExcelDataImporter$Template:M.Import": { contents: { $Type: "ExcelDataImporter$CSVTemplateContents", sheet: { entity: "M.Order" } } },
+        "ExcelDataImporter$Template:M.Broken": new Error("boom"),
+      },
+    });
+    const refs = emptyFlowReferences();
+    refs.excelTemplates.add("M.Import").add("M.Broken").add("M.Missing");
+    await resolver.resolveAll(refs);
+    expect([...cache.excelTemplateEntities]).toEqual([
+      ["M.Import", "M.Order"],
+      ["M.Broken", null],
+      ["M.Missing", null],
+    ]);
+  });
+
+  it("resolves connector actions through their Java action's return entity", async () => {
+    const { cache, resolver } = setup({
+      elements: {
+        "ConnectorKit$ConnectorType:M.Crm": {
+          connectorActions: [
+            { name: "GetOrder", javaAction: "M.JA_GetOrder" },
+            { name: "NoJava", javaAction: null },
+          ],
+        },
+        "JavaActions$JavaAction:M.JA_GetOrder": {
+          actionReturnType: { $Type: "CodeActions$ListType", parameter: { $Type: "CodeActions$ConcreteEntityType", entity: "M.Order" } },
+          actionParameters: [],
+        },
+      },
+    });
+    const refs = emptyFlowReferences();
+    refs.connectorActions.add("M.Crm.GetOrder").add("M.Crm.NoJava").add("M.Crm.Missing").add("NoDot");
+    await resolver.resolveAll(refs);
+    expect([...cache.connectorActionEntities]).toEqual([
+      ["M.Crm.GetOrder", "M.Order"],
+      ["M.Crm.NoJava", null],
+      ["M.Crm.Missing", null],
+      ["NoDot", null],
+    ]);
   });
 
   it("resolves rest operations as <service>.<operation>", async () => {

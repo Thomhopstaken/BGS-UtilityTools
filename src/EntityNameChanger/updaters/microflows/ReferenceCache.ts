@@ -1,4 +1,4 @@
-import type { CodeActions, DataTypes, MLMappings, Rest, Workflows } from "@mendix/extensions-api";
+import type { CodeActions, DatabaseConnector, DataTypes, ExcelDataImporter, MLMappings, Rest, Workflows } from "@mendix/extensions-api";
 
 // The two entity ends of an association, as stored in the model (UNVERIFIED: $ID or qualified name).
 export type AssociationEnds = { parent: string; child: string };
@@ -13,6 +13,11 @@ export type FlowReferences = {
   workflows: Set<string>;
   restOperations: Set<string>;
   mlMappings: Set<string>;
+  // Module.Connection.Query
+  databaseQueries: Set<string>;
+  excelTemplates: Set<string>;
+  // Module.ConnectorType.Action
+  connectorActions: Set<string>;
 };
 
 export function emptyFlowReferences(): FlowReferences {
@@ -25,6 +30,9 @@ export function emptyFlowReferences(): FlowReferences {
     workflows: new Set<string>(),
     restOperations: new Set<string>(),
     mlMappings: new Set<string>(),
+    databaseQueries: new Set<string>(),
+    excelTemplates: new Set<string>(),
+    connectorActions: new Set<string>(),
   };
 }
 
@@ -54,6 +62,10 @@ export class ReferenceCache {
   readonly workflowContextEntities = new Map<string, string | null>();
   readonly restOperationEntities = new Map<string, string | null>();
   readonly mlOutputEntities = new Map<string, string | null>();
+  readonly databaseQueryEntities = new Map<string, string | null>();
+  readonly excelTemplateEntities = new Map<string, string | null>();
+  // Return entity of the connector action's Java action.
+  readonly connectorActionEntities = new Map<string, string | null>();
 }
 
 // Entity of an object or list data type.
@@ -114,4 +126,29 @@ export function restOperationEntity(operation: Rest.RestOperation): string | nul
 
 export function mlOutputEntity(mapping: MLMappings.MLMappingDocument): string | null {
   return mapping.mlModelMappings?.output?.entity ?? null;
+}
+
+// The entity a query's result is mapped to; null when it maps none or several.
+// UNVERIFIED: the query output is a list of the single entity in tableMappings.
+export function databaseQueryEntity(connection: DatabaseConnector.DatabaseConnection, queryName: string): string | null {
+  const query = connection.queries.find((q) => q.name === queryName);
+  return singleEntity(query?.tableMappings.map((mapping) => mapping.entity) ?? []);
+}
+
+// The entity a template imports into: the CSV sheet's, or the one entity of all Excel sheets.
+// UNVERIFIED: the import output is a list of that entity.
+export function excelTemplateEntity(template: ExcelDataImporter.Template): string | null {
+  const contents = template.contents;
+  if (contents === null) {
+    return null;
+  }
+  if (contents.$Type === "ExcelDataImporter$CSVTemplateContents") {
+    return contents.sheet.entity;
+  }
+  return singleEntity(contents.sheets.map((sheet) => sheet.entity));
+}
+
+function singleEntity(entities: readonly (string | null)[]): string | null {
+  const distinct = new Set(entities.filter((entity): entity is string => entity !== null && entity.length > 0));
+  return distinct.size === 1 ? [...distinct][0] : null;
 }

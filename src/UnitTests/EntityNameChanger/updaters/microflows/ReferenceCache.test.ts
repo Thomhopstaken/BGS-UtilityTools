@@ -1,9 +1,11 @@
-import type { JavaActions, MLMappings, Rest, Workflows } from "@mendix/extensions-api";
+import type { DatabaseConnector, ExcelDataImporter, JavaActions, MLMappings, Rest, Workflows } from "@mendix/extensions-api";
 import { describe, expect, it } from "vitest";
 import {
+  databaseQueryEntity,
   emptyFlowReferences,
   entityOfCodeActionType,
   entityOfDataType,
+  excelTemplateEntity,
   javaActionSignature,
   mlOutputEntity,
   restOperationEntity,
@@ -24,7 +26,19 @@ describe("emptyFlowReferences", () => {
     refs.microflows.add("A.B");
     expect(emptyFlowReferences().microflows.size).toBe(0);
     expect(Object.keys(refs).sort()).toEqual(
-      ["associations", "javaActions", "javaScriptActions", "microflows", "mlMappings", "nanoflows", "restOperations", "workflows"].sort(),
+      [
+        "associations",
+        "connectorActions",
+        "databaseQueries",
+        "excelTemplates",
+        "javaActions",
+        "javaScriptActions",
+        "microflows",
+        "mlMappings",
+        "nanoflows",
+        "restOperations",
+        "workflows",
+      ].sort(),
     );
   });
 });
@@ -126,5 +140,41 @@ describe("mlOutputEntity", () => {
     expect(mlOutputEntity(mapping({ output: { entity: "M.Prediction" } }))).toBe("M.Prediction");
     expect(mlOutputEntity(mapping({ output: null }))).toBeNull();
     expect(mlOutputEntity(mapping(null))).toBeNull();
+  });
+});
+
+describe("databaseQueryEntity", () => {
+  const connection = {
+    queries: [
+      { name: "GetOrders", tableMappings: [{ entity: "M.Order" }, { entity: "M.Order" }] },
+      { name: "Mixed", tableMappings: [{ entity: "M.Order" }, { entity: "M.Customer" }] },
+      { name: "Update", tableMappings: [] },
+    ],
+  } as unknown as DatabaseConnector.DatabaseConnection;
+
+  it("returns the single mapped entity of the query", () => {
+    expect(databaseQueryEntity(connection, "GetOrders")).toBe("M.Order");
+  });
+
+  it("returns null for several, no mapped entities or a missing query", () => {
+    expect(databaseQueryEntity(connection, "Mixed")).toBeNull();
+    expect(databaseQueryEntity(connection, "Update")).toBeNull();
+    expect(databaseQueryEntity(connection, "Missing")).toBeNull();
+  });
+});
+
+describe("excelTemplateEntity", () => {
+  const template = (contents: unknown) => ({ contents }) as unknown as ExcelDataImporter.Template;
+
+  it("returns the CSV sheet entity", () => {
+    expect(excelTemplateEntity(template({ $Type: "ExcelDataImporter$CSVTemplateContents", sheet: { entity: "M.Order" } }))).toBe("M.Order");
+  });
+
+  it("returns the one entity of all Excel sheets, else null", () => {
+    const excel = (...entities: (string | null)[]) => template({ $Type: "ExcelDataImporter$ExcelTemplateContents", sheets: entities.map((entity) => ({ entity })) });
+    expect(excelTemplateEntity(excel("M.Order", null, "M.Order"))).toBe("M.Order");
+    expect(excelTemplateEntity(excel("M.Order", "M.Customer"))).toBeNull();
+    expect(excelTemplateEntity(excel())).toBeNull();
+    expect(excelTemplateEntity(template(null))).toBeNull();
   });
 });

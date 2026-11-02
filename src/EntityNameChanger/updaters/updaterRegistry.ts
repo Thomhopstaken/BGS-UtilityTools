@@ -50,6 +50,10 @@ export const EXCLUDED_DOCUMENT_TYPES: readonly { label: string; reason: string }
   { label: "Enumerations, constants", reason: "not derived from entity names" },
   // Entity and attribute references are updated.
   { label: "ML model mappings", reason: "name mirrors the model file" },
+  // Entity, attribute and Java action references are updated.
+  { label: "Database connections, Excel importer templates, connectors", reason: "names kept (lead decision)" },
+  // Entity, association, attribute and microflow references are updated.
+  { label: "Business event and change data capture services", reason: "exposed names are an external contract" },
   // Not loaded at all, references included; the run log warns when the app has any.
   { label: "Document templates", reason: "deprecated, and updating them failed" },
 ];
@@ -58,9 +62,10 @@ export const EXCLUDED_DOCUMENT_TYPES: readonly { label: string; reason: string }
 // phase, in this order. api is the app.model property. View entity queries (OQL) first, so view entities are saved
 // after their query is valid. Then domain models: saving one seems to make Studio Pro re-check its module's documents
 // against stale flow parameters, so flows and pages must be saved after it.
-// Java and JavaScript actions, consumed services and ML model mappings next, so their callers are saved after the types
-// they provide are fixed. onlyProperties: the rest of the document mirrors an external API (OpenAPI, OData metadata)
-// or the model file (tensor names, metadata) and is left alone.
+// Java and JavaScript actions, connector types, consumed services, ML model mappings, database connections and Excel
+// importer templates next, so their callers are saved after the types they provide are fixed. onlyProperties: the rest
+// of the document mirrors an external API (OpenAPI, OData metadata, exposed names), the model file (tensor names,
+// metadata) or holds SQL, connection settings and file data, and is left alone.
 export const REFERENCE_DOCUMENT_TYPES: readonly {
   documents: string;
   unitType: string;
@@ -75,6 +80,12 @@ export const REFERENCE_DOCUMENT_TYPES: readonly {
   { documents: "domain models", unitType: "DomainModels$DomainModel", api: "domainModels" },
   { documents: "Java actions", unitType: "JavaActions$JavaAction", api: "javaActions" },
   { documents: "JavaScript actions", unitType: "JavaScriptActions$JavaScriptAction", api: "javaScriptActions" },
+  {
+    documents: "connector types",
+    unitType: "ConnectorKit$ConnectorType",
+    api: "connectorTypes",
+    onlyProperties: new Set(["javaAction"]),
+  },
   {
     documents: "consumed REST services",
     unitType: "Rest$ConsumedRestService",
@@ -94,6 +105,21 @@ export const REFERENCE_DOCUMENT_TYPES: readonly {
     api: "mlMappingDocuments",
     // Input and output entity, and the attribute per tensor.
     // UNVERIFIED: both hold qualified names (Module.Entity, Module.Entity.Attribute).
+    onlyProperties: new Set(["entity", "attribute"]),
+  },
+  {
+    documents: "database connections",
+    unitType: "DatabaseConnector$DatabaseConnection",
+    api: "databaseConnections",
+    // Query result and parameter table mappings, and parameter data types. Never SQL or connection settings.
+    // UNVERIFIED: attribute holds Module.Entity.Attribute.
+    onlyProperties: new Set(["entity", "attribute"]),
+  },
+  {
+    documents: "Excel importer templates",
+    unitType: "ExcelDataImporter$Template",
+    api: "excelDataImporterTemplates",
+    // Sheet entity and column attributes. Before import mappings, which can use a template as source.
     onlyProperties: new Set(["entity", "attribute"]),
   },
   { documents: "microflows", unitType: "Microflows$Microflow", api: "microflows" },
@@ -125,6 +151,20 @@ export const REFERENCE_DOCUMENT_TYPES: readonly {
     api: "publishedODataServices2",
   },
   { documents: "published web services", unitType: "WebServices$PublishedWebService", api: "publishedWebServices" },
+  {
+    documents: "business event services",
+    unitType: "BusinessEvents$BusinessEventService",
+    api: "businessEventServices",
+    // Operation entity and microflow; message names and the AsyncAPI document are kept.
+    onlyProperties: new Set(["entity", "microflow"]),
+  },
+  {
+    documents: "change data capture services",
+    unitType: "ChangeDataCapture$EntityChangeDataCaptureService",
+    api: "entityChangeDataCaptureServices",
+    // Source entity and its properties; exposed names and versioned GUIDs are kept.
+    onlyProperties: new Set(["entity", "association", "attribute"]),
+  },
 ];
 
 type DocumentType =
@@ -170,6 +210,9 @@ export function createUpdaters(model: AppModel, deps: UpdaterDeps): UpdaterGroup
       workflows: model.workflows,
       consumedRestServices: model.consumedRestServices,
       mlMappingDocuments: model.mlMappingDocuments,
+      databaseConnections: model.databaseConnections,
+      excelDataImporterTemplates: model.excelDataImporterTemplates,
+      connectorTypes: model.connectorTypes,
     },
     references,
     renames,

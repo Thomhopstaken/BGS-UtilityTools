@@ -72,6 +72,21 @@ describe("collectReferences", () => {
     expect([...refs.mlMappings]).toEqual(["M.Ml"]);
   });
 
+  it("collects queries, templates and connector actions of module actions", () => {
+    const objects = [
+      activity({ $Type: "DatabaseConnector$ExecuteDatabaseQueryAction", query: "M.Db.Get" }),
+      activity({ $Type: "DatabaseConnector$ExecuteDatabaseQueryAction", query: null }),
+      activity({ $Type: "ExcelDataImporter$ImportExcelDataAction", template: "M.Import" }),
+      activity({ $Type: "ExcelDataImporter$ImportExcelDataAction", template: null }),
+      activity({ $Type: "ConnectorKit$ConnectorActionCallAction", connectorAction: "M.Crm.Get" }),
+      activity({ $Type: "ConnectorKit$ConnectorActionCallAction", connectorAction: null }),
+    ];
+    const refs = newHelper().collectReferences(objects);
+    expect([...refs.databaseQueries]).toEqual(["M.Db.Get"]);
+    expect([...refs.excelTemplates]).toEqual(["M.Import"]);
+    expect([...refs.connectorActions]).toEqual(["M.Crm.Get"]);
+  });
+
   it("adds to the references passed in", () => {
     const refs = emptyFlowReferences();
     refs.workflows.add("M.Existing");
@@ -184,6 +199,30 @@ describe("detectEntityVariables", () => {
       helper.applyRenames();
       expect(outputVariable.variableName).toBe("PurchaseOut");
     });
+  });
+
+  it("detects database query, Excel import and connector action outputs", () => {
+    const references = new ReferenceCache();
+    references.databaseQueryEntities.set("M.Db.Get", QNAME);
+    references.databaseQueryEntities.set("M.Db.Other", "MyModule.Customer");
+    references.excelTemplateEntities.set("M.Import", QNAME);
+    references.connectorActionEntities.set("M.Crm.Get", QNAME);
+    const { helper } = detect(
+      [
+        activity({ $Type: "DatabaseConnector$ExecuteDatabaseQueryAction", query: "M.Db.Get", outputVariableName: "OrderList" }),
+        activity({ $Type: "DatabaseConnector$ExecuteDatabaseQueryAction", query: "M.Db.Other", outputVariableName: "OrderCustomers" }),
+        activity({ $Type: "DatabaseConnector$ExecuteDatabaseQueryAction", query: null, outputVariableName: "OrderNone" }),
+        activity({ $Type: "ExcelDataImporter$ImportExcelDataAction", template: "M.Import", outputVariableName: "ImportedOrders" }),
+        activity({ $Type: "ConnectorKit$ConnectorActionCallAction", connectorAction: "M.Crm.Get", outputVariableName: "CrmOrder" }),
+        activity({ $Type: "ConnectorKit$ConnectorActionCallAction", connectorAction: "M.Crm.Unknown", outputVariableName: "CrmOrder2" }),
+      ],
+      references,
+    );
+    expect(renamesOf(helper)).toEqual([
+      ["OrderList", "PurchaseList"],
+      ["ImportedOrders", "ImportedPurchases"],
+      ["CrmOrder", "CrmPurchase"],
+    ]);
   });
 
   describe("association retrieves", () => {
@@ -729,6 +768,30 @@ describe("updateObjectUsages", () => {
       type,
       action(type, { workflowSelection: { $Type: "Workflows$WorkflowDefinitionObjectSelection", workflowDefinitionVariable: B } }),
     ]),
+    [
+      "ExecuteDatabaseQueryAction",
+      {
+        $Type: "DatabaseConnector$ExecuteDatabaseQueryAction",
+        query: "M.Keep.Get",
+        outputVariableName: "Keep",
+        dynamicQuery: E,
+        parameterMappings: [{ parameterName: "Keep", value: E }, { parameterName: "Keep", value: null }],
+        connectionParameterMappings: [{ parameterName: "Keep", value: E }],
+      },
+    ],
+    ["ImportExcelDataAction", { $Type: "ExcelDataImporter$ImportExcelDataAction", template: "M.Keep", outputVariableName: "Keep", inputFileVariableName: B }],
+    [
+      "ConnectorActionCallAction",
+      {
+        $Type: "ConnectorKit$ConnectorActionCallAction",
+        connectorAction: "M.Keep.Get",
+        outputVariableName: "Keep",
+        parameterMappings: [
+          { javaActionParameter: "M.Keep.Input", parameterValueExpression: E },
+          { javaActionParameter: "M.Keep.Empty", parameterValueExpression: null },
+        ],
+      },
+    ],
   ];
 
   const objectCases: [string, Microflows.MicroflowObject][] = [
