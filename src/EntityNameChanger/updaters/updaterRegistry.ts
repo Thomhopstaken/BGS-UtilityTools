@@ -6,9 +6,13 @@ import { NamingPolicy } from "../framework/NamingPolicy";
 import type { QualifiedNameRenames } from "../framework/QualifiedNameRenames";
 import type { RenameContext } from "../framework/RenameContext";
 import type { UnitAccess, UnitUpdater, UpdaterMode } from "../framework/types";
-import { FlowUpdater, type FlowUpdaterDeps } from "./microflows/FlowUpdater";
+import { FlowUpdater, type FlowUnitType, type FlowUpdaterDeps } from "./microflows/FlowUpdater";
 import { MicroflowHelper } from "./microflows/MicroflowHelper";
 import { AssociationUpdater, type AssociationUpdaterDeps } from "./domainModels/AssociationUpdater";
+import { type DocumentInspector, DocumentUpdater, type DocumentUpdaterDeps } from "./documents/DocumentUpdater";
+import { JsonStructureInspector } from "./documents/JsonStructureInspector";
+import { MappingInspector } from "./documents/MappingInspector";
+import { WorkflowInspector } from "./documents/WorkflowInspector";
 import { ReferenceCache } from "./microflows/ReferenceCache";
 import { ReferenceResolver } from "./microflows/ReferenceResolver";
 import { PageHelper } from "./pages/PageHelper";
@@ -69,6 +73,12 @@ export const REFERENCE_DOCUMENT_TYPES: readonly { documents: string; unitType: s
   { documents: "published web services", unitType: "WebServices$PublishedWebService", api: "publishedWebServices" },
 ];
 
+type DocumentType =
+  | "Workflows$Workflow"
+  | "ImportMappings$ImportMapping"
+  | "ExportMappings$ExportMapping"
+  | "JsonStructures$JsonStructure";
+
 export type UpdaterGroups = {
   // Read-only: decide document renames and record every renamed qualified name; the only phase that resolves.
   planners: UnitUpdater[];
@@ -101,7 +111,7 @@ export function createUpdaters(model: AppModel, deps: UpdaterDeps): UpdaterGroup
     references,
     renames,
   );
-  // Updaters run in sequence, so one helper serves microflows and nanoflows; the same holds for pages and snippets.
+  // Updaters run in sequence, so one helper serves microflows, nanoflows and rules; the same holds for pages and snippets.
   const flowDeps: FlowUpdaterDeps = {
     helper: new MicroflowHelper(context, naming, references),
     resolver,
@@ -119,11 +129,63 @@ export function createUpdaters(model: AppModel, deps: UpdaterDeps): UpdaterGroup
     plan: deps.associationPlan,
   };
   const domainModels = model.domainModels as unknown as UnitAccess<DomainModels.DomainModel>;
+  const documentDeps: DocumentUpdaterDeps = { naming, documentNames, renames, plan };
+  // Filled by the mapping planners, read by the JSON structure planner after them.
+  const usedJsonStructures = new Set<string>();
+  const mappingInspector = new MappingInspector(context, naming, usedJsonStructures);
+  const documentTypes: Record<DocumentType, { kind: string; label: string; access: unknown; inspector: DocumentInspector<never> }> = {
+    Workflows$Workflow: {
+      kind: "workflow",
+      label: "Workflows",
+      access: model.workflows,
+      inspector: new WorkflowInspector(context, naming) as unknown as DocumentInspector<never>,
+    },
+    ImportMappings$ImportMapping: {
+      kind: "import mapping",
+      label: "Import mappings",
+      access: model.importMappings,
+      inspector: mappingInspector as unknown as DocumentInspector<never>,
+    },
+    ExportMappings$ExportMapping: {
+      kind: "export mapping",
+      label: "Export mappings",
+      access: model.exportMappings,
+      inspector: mappingInspector as unknown as DocumentInspector<never>,
+    },
+    JsonStructures$JsonStructure: {
+      kind: "JSON structure",
+      label: "JSON structures",
+      access: model.jsonStructures,
+      inspector: new JsonStructureInspector(usedJsonStructures) as unknown as DocumentInspector<never>,
+    },
+  };
+  const documents = (mode: UpdaterMode, unitType: DocumentType): UnitUpdater => {
+    const { kind, label, access, inspector } = documentTypes[unitType];
+    const plural = `${kind}s`;
+    return new DocumentUpdater(
+      {
+        label: `${label}${mode === "plan" ? " (plan)" : ""}`,
+        title: mode === "plan" ? `Planning ${plural}` : undefined,
+        unitType,
+        kind,
+        description: mode === "plan" ? `Finding ${plural} to rename` : `Renaming ${plural}`,
+        mode,
+      },
+      access as UnitAccess<never>,
+      inspector,
+      documentDeps,
+    ) as unknown as UnitUpdater;
+  };
 
-  const flows = (mode: UpdaterMode, unitType: "Microflows$Microflow" | "Microflows$Nanoflow"): UnitUpdater => {
-    const kind = unitType === "Microflows$Microflow" ? "microflow" : "nanoflow";
+  const flowTypes: Record<FlowUnitType, { kind: string; label: string; access: unknown }> = {
+    Microflows$Microflow: { kind: "microflow", label: "Microflows", access: model.microflows },
+    Microflows$Nanoflow: { kind: "nanoflow", label: "Nanoflows", access: model.nanoflows },
+    Microflows$Rule: { kind: "rule", label: "Rules", access: model.rules },
+  };
+  const flows = (mode: UpdaterMode, unitType: FlowUnitType): UnitUpdater => {
+    const { kind, access } = flowTypes[unitType];
     const documents = `${kind}s`;
-    const label = `${kind === "microflow" ? "Microflows" : "Nanoflows"}${mode === "plan" ? " (plan)" : ""}`;
+    const label = `${flowTypes[unitType].label}${mode === "plan" ? " (plan)" : ""}`;
     return new FlowUpdater(
       {
         label,
@@ -136,7 +198,7 @@ export function createUpdaters(model: AppModel, deps: UpdaterDeps): UpdaterGroup
             : `Renaming variables, parameters and ${documents}`,
         mode,
       },
-      (unitType === "Microflows$Microflow" ? model.microflows : model.nanoflows) as unknown as UnitAccess<never>,
+      access as UnitAccess<never>,
       flowDeps,
     );
   };
@@ -164,13 +226,14 @@ export function createUpdaters(model: AppModel, deps: UpdaterDeps): UpdaterGroup
   const planners: UnitUpdater[] = [
     flows("plan", "Microflows$Microflow"),
     flows("plan", "Microflows$Nanoflow"),
-    createStubUpdater("Rules", "Microflows$Rule", model.rules, "Renaming parameters and rules"),
+    flows("plan", "Microflows$Rule"),
     pages("plan", "Pages$Page"),
     pages("plan", "Pages$Snippet"),
-    createStubUpdater("Workflows", "Workflows$Workflow", model.workflows, "Renaming workflows"),
-    createStubUpdater("Import mappings", "ImportMappings$ImportMapping", model.importMappings, "Renaming import mappings"),
-    createStubUpdater("Export mappings", "ExportMappings$ExportMapping", model.exportMappings, "Renaming export mappings"),
-    createStubUpdater("JSON structures", "JsonStructures$JsonStructure", model.jsonStructures, "Renaming JSON structures"),
+    documents("plan", "Workflows$Workflow"),
+    documents("plan", "ImportMappings$ImportMapping"),
+    documents("plan", "ExportMappings$ExportMapping"),
+    // After the mappings: a JSON structure is renamed only when an entity mapping uses it.
+    documents("plan", "JsonStructures$JsonStructure"),
     createStubUpdater(
       "Message definitions",
       "MessageDefinitions$MessageDefinitionCollection",
@@ -201,8 +264,13 @@ export function createUpdaters(model: AppModel, deps: UpdaterDeps): UpdaterGroup
     new AssociationUpdater("rename", domainModels, associationDeps) as unknown as UnitUpdater,
     flows("rename", "Microflows$Microflow"),
     flows("rename", "Microflows$Nanoflow"),
+    flows("rename", "Microflows$Rule"),
     pages("rename", "Pages$Page"),
     pages("rename", "Pages$Snippet"),
+    documents("rename", "Workflows$Workflow"),
+    documents("rename", "ImportMappings$ImportMapping"),
+    documents("rename", "ExportMappings$ExportMapping"),
+    documents("rename", "JsonStructures$JsonStructure"),
   ];
 
   const referenceUpdaters: UnitUpdater[] = REFERENCE_DOCUMENT_TYPES.map(

@@ -446,6 +446,13 @@ describe("parameterRenames", () => {
     ]);
   });
 
+  it("lists a renamed rule parameter", () => {
+    const helper = newHelper();
+    const rule = { ...microflow({ objects: [parameter("Order", objectType(QNAME))] }), $Type: "Microflows$Rule" } as unknown as Microflows.Rule;
+    helper.detectEntityVariables(rule);
+    expect(helper.parameterRenames()).toEqual([{ oldName: "Order", newName: "Purchase" }]);
+  });
+
   it("is empty without parameter renames", () => {
     expect(detect([parameter("Customer", objectType(QNAME))]).helper.parameterRenames()).toEqual([]);
   });

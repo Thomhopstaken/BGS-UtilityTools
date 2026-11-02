@@ -5,6 +5,7 @@ import { DocumentNameRegistry } from "../../../EntityNameChanger/framework/Docum
 import { QualifiedNameRenames } from "../../../EntityNameChanger/framework/QualifiedNameRenames";
 import { fakeContext, fakeUnitInfo } from "../helpers/fakes";
 import { AssociationUpdater } from "../../../EntityNameChanger/updaters/domainModels/AssociationUpdater";
+import { DocumentUpdater } from "../../../EntityNameChanger/updaters/documents/DocumentUpdater";
 import { FlowUpdater } from "../../../EntityNameChanger/updaters/microflows/FlowUpdater";
 import { PageUpdater } from "../../../EntityNameChanger/updaters/pages/PageUpdater";
 import { ReferenceUpdater } from "../../../EntityNameChanger/updaters/references/ReferenceUpdater";
@@ -47,13 +48,13 @@ const model = Object.fromEntries(API_NAMES.map((name) => [name, { api: name }]))
 const PLAN_LABELS = [
   "Microflows (plan)",
   "Nanoflows (plan)",
-  "Rules",
+  "Rules (plan)",
   "Pages (plan)",
   "Snippets (plan)",
-  "Workflows",
-  "Import mappings",
-  "Export mappings",
-  "JSON structures",
+  "Workflows (plan)",
+  "Import mappings (plan)",
+  "Export mappings (plan)",
+  "JSON structures (plan)",
   "Message definitions",
   "Java actions",
   "JavaScript actions",
@@ -62,7 +63,18 @@ const PLAN_LABELS = [
   "Associations (plan)",
 ];
 
-const RENAME_LABELS = ["Associations", "Microflows", "Nanoflows", "Pages", "Snippets"];
+const RENAME_LABELS = [
+  "Associations",
+  "Microflows",
+  "Nanoflows",
+  "Rules",
+  "Pages",
+  "Snippets",
+  "Workflows",
+  "Import mappings",
+  "Export mappings",
+  "JSON structures",
+];
 
 const REFERENCE_LABELS = [
   "References in domain models",
@@ -134,15 +146,20 @@ describe("createUpdaters", () => {
 
   it("titles the plan steps", () => {
     const titles = all().map((u) => u.title).filter((t) => t !== undefined);
-    expect(titles).toEqual(["Planning microflows", "Planning nanoflows", "Planning pages", "Planning snippets", "Planning associations", "Refreshing pages", "Refreshing snippets"]);
+    expect(titles).toEqual(["Planning microflows", "Planning nanoflows", "Planning rules", "Planning pages", "Planning snippets", "Planning workflows", "Planning import mappings", "Planning export mappings", "Planning JSON structures", "Planning associations", "Refreshing pages", "Refreshing snippets"]);
   });
 
   it("implements the flow and page planners, every renamer and every reference updater", () => {
     expect(all().filter((u) => u.implemented).map((u) => u.label)).toEqual([
       "Microflows (plan)",
       "Nanoflows (plan)",
+      "Rules (plan)",
       "Pages (plan)",
       "Snippets (plan)",
+      "Workflows (plan)",
+      "Import mappings (plan)",
+      "Export mappings (plan)",
+      "JSON structures (plan)",
       "Associations (plan)",
       ...RENAME_LABELS,
       ...REFERENCE_LABELS,
@@ -155,6 +172,7 @@ describe("createUpdaters", () => {
     for (const [label, type, api] of [
       ["Microflows", "Microflows$Microflow", "microflows"],
       ["Nanoflows", "Microflows$Nanoflow", "nanoflows"],
+      ["Rules", "Microflows$Rule", "rules"],
     ] as const) {
       for (const suffix of ["", " (plan)"]) {
         expect(byLabel(label + suffix, groups)).toBeInstanceOf(FlowUpdater);
@@ -168,6 +186,18 @@ describe("createUpdaters", () => {
     ] as const) {
       for (const suffix of ["", " (plan)"]) {
         expect(byLabel(label + suffix, groups)).toBeInstanceOf(PageUpdater);
+        expect(byLabel(label + suffix, groups).access).toBe(model[api]);
+        expect(byLabel(label + suffix, groups).unitType).toBe(type);
+      }
+    }
+    for (const [label, type, api] of [
+      ["Workflows", "Workflows$Workflow", "workflows"],
+      ["Import mappings", "ImportMappings$ImportMapping", "importMappings"],
+      ["Export mappings", "ExportMappings$ExportMapping", "exportMappings"],
+      ["JSON structures", "JsonStructures$JsonStructure", "jsonStructures"],
+    ] as const) {
+      for (const suffix of ["", " (plan)"]) {
+        expect(byLabel(label + suffix, groups)).toBeInstanceOf(DocumentUpdater);
         expect(byLabel(label + suffix, groups).access).toBe(model[api]);
         expect(byLabel(label + suffix, groups).unitType).toBe(type);
       }
@@ -256,5 +286,21 @@ describe("createUpdaters", () => {
 
   it("documents the excluded types with a reason", () => {
     expect(EXCLUDED_DOCUMENT_TYPES.every((e) => e.label.length > 0 && e.reason.length > 0)).toBe(true);
+  });
+
+  it("renames a JSON structure only after an entity mapping using it was planned", async () => {
+    const groups = create();
+    const json = { $Type: "JsonStructures$JsonStructure", name: "JSON_Order", elements: [] } as unknown as Primitives.UnitBase;
+    const jsonInfo = fakeUnitInfo("js", "JsonStructures$JsonStructure", "MyModule", "JSON_Order");
+    const mapping = {
+      $Type: "ImportMappings$ImportMapping",
+      name: "IMM_Order",
+      jsonStructure: "MyModule.JSON_Order",
+      parameterType: { $Type: "DataTypes$UnknownType" },
+      rootMappingElements: [{ $Type: "ImportMappings$ImportObjectMappingElement", entity: "MyModule.Order", children: [] }],
+    } as unknown as Primitives.UnitBase;
+    await byLabel("Import mappings (plan)", groups).update(mapping, fakeUnitInfo("imm", "ImportMappings$ImportMapping", "MyModule", "IMM_Order"));
+    await byLabel("JSON structures (plan)", groups).update(json, jsonInfo);
+    expect(await byLabel("JSON structures", groups).update(json, jsonInfo)).toMatchObject({ changed: true, renamedTo: "JSON_Purchase" });
   });
 });

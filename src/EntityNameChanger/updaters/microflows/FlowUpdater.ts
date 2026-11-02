@@ -11,8 +11,8 @@ export type FlowUpdaterSpec = {
   label: string;
   // Progress step title; defaults to "Updating <label>".
   title?: string;
-  unitType: "Microflows$Microflow" | "Microflows$Nanoflow";
-  // Used in log lines: "microflow" or "nanoflow".
+  unitType: FlowUnitType;
+  // Used in log lines: "microflow", "nanoflow" or "rule".
   kind: string;
   description: string;
   mode: UpdaterMode;
@@ -27,9 +27,11 @@ export type FlowUpdaterDeps = {
   plan: DocumentRenamePlan;
 };
 
-export type FlowDocument = Microflows.Microflow | Microflows.Nanoflow;
+export type FlowUnitType = "Microflows$Microflow" | "Microflows$Nanoflow" | "Microflows$Rule";
 
-// Microflows and nanoflows, in two phases:
+export type FlowDocument = Microflows.Microflow | Microflows.Nanoflow | Microflows.Rule;
+
+// Microflows, nanoflows and rules, in two phases:
 // plan   - read-only: resolves references, decides the document rename and records document and parameter renames.
 // rename - renames variables, parameters, the return variable and the flow (as planned). Uses the references
 //          resolved in the plan phase; references to other renamed names are left to the reference pass.
@@ -64,6 +66,9 @@ export class FlowUpdater<TUnit extends FlowDocument> implements UnitUpdater<TUni
       await this.deps.resolver.resolveAll(helper.collectReferences(flow.objectCollection.objects));
     }
     helper.detectEntityVariables(flow);
+    if (flow.$Type === "Microflows$Rule") {
+      this.logRuleParameters(flow);
+    }
     return this.mode === "plan" ? this.plan(flow, info) : this.rename(flow, info);
   }
 
@@ -113,6 +118,17 @@ export class FlowUpdater<TUnit extends FlowDocument> implements UnitUpdater<TUni
       `${info.moduleName}.${oldName}: changed=${result.changed}, ${result.renamedVariables} renames, ${result.skippedRenames} skipped`,
     );
     return result;
+  }
+
+  // UNVERIFIED: rule parameters are assumed to appear as parameter objects too, as in microflows.
+  // Studio Pro left rule.parameters undefined despite the typings.
+  private logRuleParameters(rule: Microflows.Rule): void {
+    const objects = rule.objectCollection.objects.filter((o) => o.$Type === "Microflows$MicroflowParameterObject").length;
+    const listed = rule.parameters?.length;
+    console.debug(`rule ${rule.name}: ${listed ?? "no"} listed parameters, ${objects} parameter objects`);
+    if (listed !== undefined && objects < listed) {
+      console.info(`rule ${rule.name}: parameters without a parameter object are not renamed`);
+    }
   }
 
   // Callers reference the flow and its parameters by qualified name; the reference pass rewrites them.

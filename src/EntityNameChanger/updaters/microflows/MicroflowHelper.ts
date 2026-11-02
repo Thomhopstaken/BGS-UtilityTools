@@ -124,8 +124,8 @@ export class MicroflowHelper {
   // Takes MicroflowBase so nanoflows and rules can reuse detection later.
   detectEntityVariables(flow: Microflows.MicroflowBase): void {
     const objects = flow.objectCollection.objects;
-    // Nanoflows only hold parameters in their object collection.
-    this.flowParameters = "parameters" in flow ? flow.parameters : [];
+    // Nanoflows only hold parameters in their object collection; rules may lack the list at runtime.
+    this.flowParameters = ("parameters" in flow ? flow.parameters : undefined) ?? [];
     const sequenceFlows = flow.flows.filter(
       (f): f is Microflows.SequenceFlow => f.$Type === "Microflows$SequenceFlow",
     );

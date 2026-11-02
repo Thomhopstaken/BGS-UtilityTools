@@ -46,4 +46,18 @@ describe("ReferenceUpdater", () => {
     expect((await updater.update(unit, info)).updatedReferences).toBe(1);
     expect(settings.microflow).toBe("MyModule.ACT_Purchase");
   });
+
+  it("rewrites a rule call and its parameter mappings after the rule and parameter renames", async () => {
+    const { renames } = setup();
+    renames.addDocument("MyModule", "Order_IsValid", "Purchase_IsValid");
+    renames.addParameter("MyModule", "Order_IsValid", "Purchase_IsValid", "Order", "Purchase");
+    const updater = new ReferenceUpdater({ documents: "microflows", unitType: "Microflows$Microflow" }, fakeUnitAccess<Primitives.UnitBase>([]), renames);
+    const mapping = { $Type: "Microflows$RuleCallParameterMapping", parameter: "MyModule.Order_IsValid.Order", argument: "$Purchase" };
+    const ruleCall = { $Type: "Microflows$RuleCall", rule: "MyModule.Order_IsValid", parameterMappings: [mapping] };
+    const split = { $Type: "Microflows$ExclusiveSplit", splitCondition: { $Type: "Microflows$RuleSplitCondition", ruleCall } };
+    const unit = { $Type: "Microflows$Microflow", $ID: "mf1", name: "ACT_Check", objectCollection: { objects: [split] } } as unknown as Primitives.UnitBase;
+    expect((await updater.update(unit, fakeUnitInfo("mf1", "Microflows$Microflow", "MyModule", "ACT_Check"))).updatedReferences).toBe(2);
+    expect(ruleCall.rule).toBe("MyModule.Purchase_IsValid");
+    expect(mapping.parameter).toBe("MyModule.Purchase_IsValid.Purchase");
+  });
 });

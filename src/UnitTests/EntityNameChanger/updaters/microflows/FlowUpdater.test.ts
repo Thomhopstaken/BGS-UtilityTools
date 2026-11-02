@@ -6,17 +6,22 @@ import { NamingPolicy } from "../../../../EntityNameChanger/framework/NamingPoli
 import { QualifiedNameRenames } from "../../../../EntityNameChanger/framework/QualifiedNameRenames";
 import type { UpdaterMode } from "../../../../EntityNameChanger/framework/types";
 import { fakeContext, fakeUnitAccess, fakeUnitInfo } from "../../helpers/fakes";
-import { action, activity, microflow, objectType, parameter, stringType } from "../../helpers/microflowBuilders";
-import { FlowUpdater, type FlowUpdaterDeps } from "../../../../EntityNameChanger/updaters/microflows/FlowUpdater";
+import { action, activity, microflow, microflowObject, objectType, parameter, stringType } from "../../helpers/microflowBuilders";
+import { FlowUpdater, type FlowUnitType, type FlowUpdaterDeps } from "../../../../EntityNameChanger/updaters/microflows/FlowUpdater";
 import { MicroflowHelper } from "../../../../EntityNameChanger/updaters/microflows/MicroflowHelper";
 import { type FlowReferences, ReferenceCache } from "../../../../EntityNameChanger/updaters/microflows/ReferenceCache";
 import type { ReferenceResolver } from "../../../../EntityNameChanger/updaters/microflows/ReferenceResolver";
 
 const context = fakeContext();
 const QNAME = "MyModule.Order";
-type Flow = Microflows.Microflow | Microflows.Nanoflow;
+type Flow = Microflows.Microflow | Microflows.Nanoflow | Microflows.Rule;
+const KINDS = {
+  Microflows$Microflow: { kind: "microflow", label: "Microflows" },
+  Microflows$Nanoflow: { kind: "nanoflow", label: "Nanoflows" },
+  Microflows$Rule: { kind: "rule", label: "Rules" },
+};
 
-function setup(documents: string[] = [], unitType: "Microflows$Microflow" | "Microflows$Nanoflow" = "Microflows$Microflow") {
+function setup(documents: string[] = [], unitType: FlowUnitType = "Microflows$Microflow") {
   const references = new ReferenceCache();
   // Stands in for the resolver: records what was asked and fills the shared cache.
   const resolver = {
@@ -34,10 +39,10 @@ function setup(documents: string[] = [], unitType: "Microflows$Microflow" | "Mic
     renames: QualifiedNameRenames.forEntity(context),
     plan: new DocumentRenamePlan(),
   };
-  const kind = unitType === "Microflows$Microflow" ? "microflow" : "nanoflow";
+  const { kind, label } = KINDS[unitType];
   const create = (mode: UpdaterMode) =>
     new FlowUpdater<Flow>(
-      { label: kind === "microflow" ? "Microflows" : "Nanoflows", unitType, kind, description: "Testing", mode },
+      { label, unitType, kind, description: "Testing", mode },
       fakeUnitAccess([]),
       deps,
     );
@@ -58,6 +63,14 @@ function nanoflow(spec: Parameters<typeof microflow>[0]): Microflows.Nanoflow {
   const flow = microflow(spec) as unknown as Record<string, unknown>;
   delete flow.parameters;
   return flow as unknown as Microflows.Nanoflow;
+}
+
+// A rule has a boolean (or enumeration) return type and RuleParameter entries in its parameters list.
+function rule(spec: Parameters<typeof microflow>[0]): Microflows.Rule {
+  const flow = microflow({ returnType: { $Type: "DataTypes$BooleanType" } as never, ...spec }) as unknown as Record<string, unknown>;
+  flow.$Type = "Microflows$Rule";
+  flow.parameters = (flow.parameters as { name: string }[]).map((p) => ({ $Type: "Microflows$RuleParameter", ...p }));
+  return flow as unknown as Microflows.Rule;
 }
 
 describe("FlowUpdater plan", () => {
@@ -218,5 +231,68 @@ describe("FlowUpdater for nanoflows", () => {
     expect(call.outputVariableName).toBe("FoundPurchase");
     expect((call.nanoflowCall as { parameterMappings: { argument: string }[] }).parameterMappings[0].argument).toBe("$Purchase");
     expect(deps.renames.map.get("MyModule.ACT_Order_Show.Order")).toBe("MyModule.ACT_Purchase_Show.Purchase");
+  });
+});
+
+describe("FlowUpdater for rules", () => {
+  const ruleInfo = (name: string) => fakeUnitInfo("rl-1", "Microflows$Rule", "MyModule", name);
+
+  it("has the rule metadata", () => {
+    const { planner } = setup([], "Microflows$Rule");
+    expect(planner).toMatchObject({ label: "Rules", unitType: "Microflows$Rule", implemented: true });
+  });
+
+  it("plans the rule and parameter renames without changing the rule", async () => {
+    const { planner, deps } = setup(["Order_IsValid"], "Microflows$Rule");
+    const flow = rule({ name: "Order_IsValid", objects: [parameter("Order", objectType(QNAME))] });
+    const before = JSON.stringify(flow);
+    expect(await planner.update(flow, ruleInfo(flow.name))).toMatchObject({ changed: false });
+    expect(JSON.stringify(flow)).toBe(before);
+    expect(deps.plan.get("rl-1")).toEqual({ renamedTo: "Purchase_IsValid", skipped: 0 });
+    expect(deps.renames.map.get("MyModule.Order_IsValid")).toBe("MyModule.Purchase_IsValid");
+    expect(deps.renames.map.get("MyModule.Order_IsValid.Order")).toBe("MyModule.Purchase_IsValid.Purchase");
+  });
+
+  it("renames the rule, its parameter object and listed parameter, and their usages", async () => {
+    const { run } = setup(["Order_IsValid"], "Microflows$Rule");
+    const split = microflowObject("ExclusiveSplit", { splitCondition: { $Type: "Microflows$ExpressionSplitCondition", expression: "$Order/Total > 0" } });
+    const end = microflowObject("EndEvent", { returnValue: "$Order/Valid" });
+    const flow = rule({ name: "Order_IsValid", objects: [parameter("Order", objectType(QNAME)), split, end] });
+    const result = await run(flow, ruleInfo(flow.name));
+    expect(result).toEqual({ changed: true, renamedTo: "Purchase_IsValid", renamedVariables: 1, updatedReferences: 0, skippedRenames: 0, renamedAssociations: 0 });
+    expect(flow.name).toBe("Purchase_IsValid");
+    expect((flow.objectCollection.objects[0] as Microflows.MicroflowParameterObject).name).toBe("Purchase");
+    expect(flow.parameters[0]).toMatchObject({ $Type: "Microflows$RuleParameter", name: "Purchase" });
+    expect((split as unknown as { splitCondition: { expression: string } }).splitCondition.expression).toBe("$Purchase/Total > 0");
+    expect((end as unknown as { returnValue: string }).returnValue).toBe("$Purchase/Valid");
+  });
+
+  it("keeps the return variable name of a boolean rule", async () => {
+    const { run } = setup([], "Microflows$Rule");
+    const flow = rule({ name: "IsValid", objects: [parameter("Order", objectType(QNAME))], returnVariableName: "Order" });
+    await run(flow, ruleInfo(flow.name));
+    expect(flow.returnVariableName).toBe("Order");
+  });
+
+  it("reports a rule without the entity as unchanged", async () => {
+    const { run } = setup(["Order_IsValid"], "Microflows$Rule");
+    const flow = rule({ name: "Order_IsValid", objects: [parameter("Customer", stringType())] });
+    expect(await run(flow, ruleInfo(flow.name))).toMatchObject({ changed: false, renamedTo: null });
+    expect(flow.name).toBe("Order_IsValid");
+  });
+
+  it("renames a rule whose parameters list is undefined, as seen in Studio Pro", async () => {
+    const { run } = setup(["Order_IsValid"], "Microflows$Rule");
+    const flow = rule({ name: "Order_IsValid", objects: [parameter("Order", objectType(QNAME))] });
+    (flow as unknown as Record<string, unknown>).parameters = undefined;
+    expect(await run(flow, ruleInfo(flow.name))).toMatchObject({ changed: true, renamedTo: "Purchase_IsValid", renamedVariables: 1 });
+    expect((flow.objectCollection.objects[0] as Microflows.MicroflowParameterObject).name).toBe("Purchase");
+  });
+
+  it("does not rename a listed parameter without a parameter object", async () => {
+    const { run } = setup([], "Microflows$Rule");
+    const flow = rule({ name: "IsValid", parameters: [{ name: "Order" }] });
+    expect((await run(flow, ruleInfo(flow.name))).changed).toBe(false);
+    expect(flow.parameters[0].name).toBe("Order");
   });
 });
