@@ -11,9 +11,60 @@ export type LocalRenames = {
   readonly renames: ReadonlyMap<string, string>;
   // Callers reference these as Module.Document.Name, so they are recorded for the reference pass.
   readonly referencedByCallers: boolean;
+  // Local renames skipped because the new name is taken.
+  readonly skipped?: number;
 };
 
 export const NO_LOCAL_RENAMES: LocalRenames = Object.freeze({ renames: new Map<string, string>(), referencedByCallers: false });
+
+// Named elements of the entity (parameters, definitions) whose name holds the entity name. A new name taken by a
+// sibling is skipped and counted. owner is used in log lines only.
+export function planNamedRenames<T extends { name: string }>(
+  owner: string,
+  elements: readonly T[],
+  ofEntity: (element: T) => boolean,
+  naming: NamingPolicy,
+  referencedByCallers: boolean,
+): LocalRenames {
+  const taken = new Set(elements.map((element) => element.name));
+  const renames = new Map<string, string>();
+  let skipped = 0;
+  for (const element of elements) {
+    if (!ofEntity(element)) {
+      continue;
+    }
+    const newName = naming.rename(element.name);
+    if (newName === element.name) {
+      continue;
+    }
+    if (taken.has(newName)) {
+      console.info(`${owner}: skipped renaming '${element.name}': '${newName}' already exists`);
+      skipped++;
+      continue;
+    }
+    console.debug(`${owner}: rename '${element.name}' -> '${newName}'`);
+    taken.add(newName);
+    renames.set(element.name, newName);
+  }
+  if (renames.size === 0 && skipped === 0) {
+    return NO_LOCAL_RENAMES;
+  }
+  return { renames, referencedByCallers: referencedByCallers && renames.size > 0, skipped };
+}
+
+// Renames the named elements listed in local; returns the number renamed.
+export function applyNamedRenames(elements: readonly { name: string }[], local: LocalRenames): number {
+  let changes = 0;
+  for (const element of elements) {
+    const newName = local.renames.get(element.name);
+    if (newName !== undefined) {
+      console.debug(`applying rename '${element.name}' -> '${newName}'`);
+      element.name = newName;
+      changes++;
+    }
+  }
+  return changes;
+}
 
 // The document-type specific part of a DocumentUpdater.
 export interface DocumentInspector<TUnit extends Primitives.UnitBase & { name: string }> {
@@ -21,6 +72,8 @@ export interface DocumentInspector<TUnit extends Primitives.UnitBase & { name: s
   planLocalRenames(unit: TUnit): LocalRenames;
   // Applies the local renames and any other in-document change; returns the number of changed values.
   apply(unit: TUnit, local: LocalRenames): number;
+  // Exposed names renamed and skipped by the last apply (published services only).
+  exposedNameCounts?(): { renamed: number; skipped: number };
 }
 
 export type DocumentUpdaterSpec = {
@@ -42,7 +95,8 @@ export type DocumentUpdaterDeps = {
   plan: DocumentRenamePlan;
 };
 
-// Documents without flow variables (workflows, mappings, JSON structures), in two phases:
+// Documents without flow variables (workflows, mappings, JSON structures, message definitions, document templates,
+// datasets, Java and JavaScript actions), in two phases:
 // plan   - read-only: decides the document rename and records it, with caller-visible local renames.
 // rename - applies the local renames and the planned document rename; references are left to the reference pass.
 export class DocumentUpdater<TUnit extends Primitives.UnitBase & { name: string }> implements UnitUpdater<TUnit> {
@@ -98,6 +152,7 @@ export class DocumentUpdater<TUnit extends Primitives.UnitBase & { name: string 
     const oldName = doc.name;
     const local = this.inspector.planLocalRenames(doc);
     const changes = this.inspector.apply(doc, local);
+    const exposed = this.inspector.exposedNameCounts?.();
     const document = this.deps.plan.get(info.$ID);
     if (document.renamedTo !== null) {
       console.info(`renaming ${this.kind} ${info.moduleName}.${oldName} to ${document.renamedTo}`);
@@ -108,8 +163,9 @@ export class DocumentUpdater<TUnit extends Primitives.UnitBase & { name: string 
       renamedTo: document.renamedTo,
       renamedVariables: local.renames.size,
       updatedReferences: 0,
-      skippedRenames: document.skipped,
+      skippedRenames: document.skipped + (local.skipped ?? 0) + (exposed?.skipped ?? 0),
       renamedAssociations: 0,
+      ...(exposed === undefined ? {} : { renamedExposedNames: exposed.renamed }),
     };
     console.info(
       `${info.moduleName}.${oldName}: changed=${result.changed}, ${result.renamedVariables} local renames, ${changes} changes, ${result.skippedRenames} skipped`,

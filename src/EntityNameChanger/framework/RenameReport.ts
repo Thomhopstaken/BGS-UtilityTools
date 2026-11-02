@@ -1,9 +1,11 @@
 import type { Primitives } from "@mendix/extensions-api";
+import { MessageDefinitionUsage } from "./MessageDefinitionUsage";
 import type { UnitUpdateResult } from "./types";
 
 export type UnitOutcome = {
   label: string;
   unitId: string;
+  unitType: string;
   name: string;
   // Module.Name, or the name alone for a unit outside a module.
   qualifiedName: string;
@@ -18,6 +20,7 @@ export type UnitFailure = {
 };
 
 export type DocumentRenameOutcome = {
+  unitId: string;
   unitType: string;
   oldQualifiedName: string;
   newQualifiedName: string;
@@ -26,6 +29,25 @@ export type DocumentRenameOutcome = {
 // Document types navigation can reference (menu items, home pages, login page).
 // Navigation is not in the extensions API, so these are reported for a manual check.
 export const NAVIGATION_UNIT_TYPES: ReadonlySet<string> = new Set(["Pages$Page", "Microflows$Microflow", "Microflows$Nanoflow"]);
+
+// Actions whose code (javasource, javascriptsource) is not updated; any change needs a manual check.
+export const CODE_ACTION_UNIT_TYPES: ReadonlySet<string> = new Set(["JavaActions$JavaAction", "JavaScriptActions$JavaScriptAction"]);
+
+// Datasets are used by report widgets, which are not in the API; a rename needs a manual check.
+export const DATA_SET_UNIT_TYPE = "DataSets$DataSet";
+
+// A changed message definition no longer matches the mappings that use it; they must be updated by hand.
+export const MESSAGE_DEFINITION_UNIT_TYPES: ReadonlySet<string> = new Set([
+  "MessageDefinitions$MessageDefinitionCollection",
+  "MessageDefinitions$MessageDefinition2",
+]);
+
+export type MappedMessageDefinition = {
+  unitId: string;
+  // Before the rename.
+  qualifiedName: string;
+  mappings: string[];
+};
 
 // Collects what happened per unit during a job.
 export class RenameReport {
@@ -42,6 +64,10 @@ export class RenameReport {
   entitySkipReason: string | null = null;
   // Set when the job stopped after the entity was renamed.
   incompleteReason: string | null = null;
+  // Document templates in the app's own modules; they are never updated. null: they could not be listed.
+  documentTemplates: number | null = 0;
+  // Filled by the mapping planners.
+  readonly messageDefinitionUsage = new MessageDefinitionUsage();
 
   get checkedUnits(): number {
     return this.checkedIds.size;
@@ -68,11 +94,12 @@ export class RenameReport {
       this.changedIds.add(info.$ID);
       const name = info.name ?? info.$ID;
       const qualifiedName = info.moduleName === undefined ? name : `${info.moduleName}.${name}`;
-      this.changed.push({ label, unitId: info.$ID, name, qualifiedName, result });
+      this.changed.push({ label, unitId: info.$ID, unitType: info.$Type, name, qualifiedName, result });
     }
     if (result.renamedTo !== null && info.name !== undefined) {
       const module = info.moduleName === undefined ? "" : `${info.moduleName}.`;
       this.renamedDocuments.push({
+        unitId: info.$ID,
         unitType: info.$Type,
         oldQualifiedName: `${module}${info.name}`,
         newQualifiedName: `${module}${result.renamedTo}`,
@@ -127,6 +154,41 @@ export class RenameReport {
   // Renamed documents navigation may reference; these need a manual check.
   navigationDocuments(): DocumentRenameOutcome[] {
     return this.renamedDocuments.filter((d) => NAVIGATION_UNIT_TYPES.has(d.unitType));
+  }
+
+  // Qualified names (before the rename) of changed Java and JavaScript actions, each once.
+  changedCodeActions(): string[] {
+    const names = new Set(this.changed.filter((c) => CODE_ACTION_UNIT_TYPES.has(c.unitType)).map((c) => c.qualifiedName));
+    console.debug(`code actions to check: ${names.size}`);
+    return [...names];
+  }
+
+  // Qualified names of published services whose exposed names were renamed; their API clients need a check.
+  changedApis(): string[] {
+    const names = new Set(this.changed.filter((c) => (c.result.renamedExposedNames ?? 0) > 0).map((c) => c.qualifiedName));
+    console.debug(`published services with renamed exposed names: ${names.size}`);
+    return [...names];
+  }
+
+  // Changed message definitions that import or export mappings use, each once with its mappings.
+  changedMappedMessageDefinitions(): MappedMessageDefinition[] {
+    const byUnit = new Map<string, MappedMessageDefinition>();
+    for (const outcome of this.changed) {
+      if (!MESSAGE_DEFINITION_UNIT_TYPES.has(outcome.unitType) || byUnit.has(outcome.unitId)) {
+        continue;
+      }
+      const mappings = this.messageDefinitionUsage.mappingsOf(outcome.qualifiedName);
+      if (mappings.length > 0) {
+        byUnit.set(outcome.unitId, { unitId: outcome.unitId, qualifiedName: outcome.qualifiedName, mappings });
+      }
+    }
+    console.debug(`changed message definitions used by mappings: ${byUnit.size}`);
+    return [...byUnit.values()];
+  }
+
+  // Renamed datasets; report widgets using them need a manual check.
+  renamedDataSets(): DocumentRenameOutcome[] {
+    return this.renamedDocuments.filter((d) => d.unitType === DATA_SET_UNIT_TYPE);
   }
 
   // Manual-check lines for renamed documents navigation may reference; empty when none were renamed.

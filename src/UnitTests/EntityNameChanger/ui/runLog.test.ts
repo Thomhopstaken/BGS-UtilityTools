@@ -83,7 +83,9 @@ describe("buildOutcome", () => {
 describe("buildRunLog", () => {
   it("shows only the entity group for an empty run", () => {
     const log = buildRunLog(success, renamedReport(), context);
-    expect(log.groups).toEqual([{ title: "Entity", rows: [{ tone: "success", what: "MyModule.Order → MyModule.Purchase", note: undefined }] }]);
+    expect(log.groups).toEqual([
+      { title: "Entity", rows: [{ tone: "success", what: "MyModule.Order → MyModule.Purchase", note: undefined, target: { documentId: "dm-1", elementId: "entity-1" } }] },
+    ]);
   });
 
   it("marks an incomplete entity rename as warning", () => {
@@ -93,6 +95,7 @@ describe("buildRunLog", () => {
       tone: "warning",
       what: "MyModule.Order → MyModule.Purchase",
       note: "cancelled by user",
+      target: { documentId: "dm-1", elementId: "entity-1" },
     });
   });
 
@@ -114,11 +117,13 @@ describe("buildRunLog", () => {
     report.addResult("Associations", fakeUnitInfo("dm-2", "DomainModels$DomainModel", "Other", "DomainModel"), changed({ renamedVariables: 0, renamedAssociations: 1 }));
     const log = buildRunLog(success, report, context);
     expect(titles(log)).toEqual(["Entity", "Failed documents", "Renamed documents", "Updated documents", "Skipped renames", "Navigation"]);
-    expect(log.groups[1].rows).toEqual([{ tone: "error", what: "MyModule.Order_Edit", note: "Pages: cannot load" }]);
-    expect(log.groups[2].rows).toEqual([{ tone: "success", what: "MyModule.ACT_Order_Save → MyModule.ACT_Purchase_Save", note: "Microflow" }]);
+    expect(log.groups[1].rows).toEqual([{ tone: "error", what: "MyModule.Order_Edit", note: "Pages: cannot load", target: { documentId: "u2" } }]);
+    expect(log.groups[2].rows).toEqual([
+      { tone: "success", what: "MyModule.ACT_Order_Save → MyModule.ACT_Purchase_Save", note: "Microflow", target: { documentId: "u1" } },
+    ]);
     expect(log.groups[3].rows).toEqual([
-      { tone: "success", what: "MyModule.ACT_Order_Save", note: "2 variables, 4 references" },
-      { tone: "success", what: "Other.DomainModel", note: "1 association" },
+      { tone: "success", what: "MyModule.ACT_Order_Save", note: "2 variables, 4 references", target: { documentId: "u1" } },
+      { tone: "success", what: "Other.DomainModel", note: "1 association", target: { documentId: "dm-2" } },
     ]);
     expect(log.groups[4].rows).toEqual([{ tone: "warning", what: "1 rename skipped", note: "The new name is already in use; see the Studio Pro log." }]);
     expect(log.groups[5].rows).toEqual([
@@ -151,6 +156,120 @@ describe("buildRunLog", () => {
     expect(titles(buildRunLog(success, report, context))).not.toContain("Navigation");
   });
 
+  it("gives warning rows without a document no target", () => {
+    const report = renamedReport();
+    report.addResult("Microflows", flow, changed({ renamedTo: "ACT_Purchase_Save", skippedRenames: 1 }));
+    const log = buildRunLog(success, report, context);
+    for (const title of ["Skipped renames", "Navigation"]) {
+      expect(log.groups.find((g) => g.title === title)?.rows.every((r) => r.target === undefined)).toBe(true);
+    }
+  });
+
+  it("keeps targets when only problems are shown", () => {
+    const report = renamedReport();
+    report.addError("Pages", page, "bad");
+    expect(onlyProblems(buildRunLog(success, report, context).groups)[0].rows[0].target).toEqual({ documentId: "u2" });
+  });
+
+  it("warns to check code for changed actions and report widgets for renamed datasets", () => {
+    const report = renamedReport();
+    report.addResult("Java actions", fakeUnitInfo("j1", "JavaActions$JavaAction", "MyModule", "JA_Order"), changed({ renamedTo: "JA_Purchase" }));
+    report.addResult("References in JavaScript actions", fakeUnitInfo("j2", "JavaScriptActions$JavaScriptAction", "MyModule", "JS_Order"), changed({ updatedReferences: 1 }));
+    report.addResult("Datasets", fakeUnitInfo("d1", "DataSets$DataSet", "MyModule", "DS_Order"), changed({ renamedTo: "DS_Purchase" }));
+    const log = buildRunLog(success, report, context);
+    expect(titles(log).at(-1)).toBe("Code and reports");
+    expect(log.groups.find((g) => g.title === "Code and reports")?.rows).toEqual([
+      { tone: "warning", what: "Check javasource and javascriptsource", note: "2 changed Java or JavaScript actions; their code is not updated." },
+      { tone: "warning", what: "Check report widgets", note: "1 renamed dataset may be used by report widgets; these are not updated." },
+    ]);
+  });
+
+  it("uses singular and plural in the code and reports warnings", () => {
+    const report = renamedReport();
+    report.addResult("Java actions", fakeUnitInfo("j1", "JavaActions$JavaAction", "MyModule", "JA_Order"), changed());
+    report.addResult("Datasets", fakeUnitInfo("d1", "DataSets$DataSet", "MyModule", "DS_Order"), changed({ renamedTo: "DS_Purchase" }));
+    report.addResult("Datasets", fakeUnitInfo("d2", "DataSets$DataSet", "MyModule", "DS_Order2"), changed({ renamedTo: "DS_Purchase2" }));
+    expect(buildRunLog(success, report, context).groups.find((g) => g.title === "Code and reports")?.rows.map((r) => r.note)).toEqual([
+      "1 changed Java or JavaScript action; their code is not updated.",
+      "2 renamed datasets may be used by report widgets; these are not updated.",
+    ]);
+  });
+
+  it("warns per changed message definition used by mappings, opening the definition", () => {
+    const report = renamedReport();
+    report.messageDefinitionUsage.add("MyModule.MD_Order", "MyModule.IMM_Order");
+    report.messageDefinitionUsage.add("MyModule.MD_Order", "MyModule.EMM_Order");
+    report.messageDefinitionUsage.addEntityDefinition("MyModule.MD_Order");
+    report.addResult("References in message definition documents", fakeUnitInfo("m1", "MessageDefinitions$MessageDefinition2", "MyModule", "MD_Order"), changed({ updatedReferences: 1 }));
+    const group = buildRunLog(success, report, context).groups.find((g) => g.title === "Message definitions");
+    expect(group?.rows).toEqual([
+      {
+        tone: "warning",
+        what: "MyModule.MD_Order",
+        note: "Used by MyModule.EMM_Order, MyModule.IMM_Order. These mappings no longer match the changed schema; updating them in Studio Pro clears them, so they must be mapped again by hand.",
+        target: { documentId: "m1" },
+      },
+    ]);
+  });
+
+  it("has no message definition group when no used definition changed", () => {
+    const report = renamedReport();
+    report.messageDefinitionUsage.add("MyModule.MD_Order", "MyModule.IMM_Order");
+    report.messageDefinitionUsage.addEntityDefinition("MyModule.MD_Order");
+    report.addResult("Message definitions", fakeUnitInfo("m1", "MessageDefinitions$MessageDefinitionCollection", "MyModule", "MD_Other"), changed());
+    expect(titles(buildRunLog(success, report, context))).not.toContain("Message definitions");
+  });
+
+  it("warns to check API clients of services with renamed exposed names, first in its group", () => {
+    const report = renamedReport();
+    const service = fakeUnitInfo("s1", "ODataPublish$PublishedODataService2", "MyModule", "POS_Order");
+    report.addResult("Published OData services", service, changed({ renamedVariables: 0, renamedTo: "POS_Purchase", renamedExposedNames: 2 }));
+    report.addResult("Datasets", fakeUnitInfo("d1", "DataSets$DataSet", "MyModule", "DS_Order"), changed({ renamedTo: "DS_Purchase" }));
+    const log = buildRunLog(success, report, context);
+    expect(log.groups.find((g) => g.title === "Code and reports")?.rows[0]).toEqual({
+      tone: "warning",
+      what: "Check API clients",
+      note: "1 published service has renamed exposed names; their clients must be updated.",
+    });
+    expect(log.groups.find((g) => g.title === "Updated documents")?.rows).toContainEqual({
+      tone: "success",
+      what: "MyModule.POS_Order",
+      note: "2 exposed names",
+      target: { documentId: "s1" },
+    });
+  });
+
+  it("warns about document templates after a rename when the app has any", () => {
+    const report = renamedReport();
+    report.documentTemplates = 3;
+    expect(buildRunLog(success, report, context).groups.find((g) => g.title === "Code and reports")?.rows).toEqual([
+      { tone: "warning", what: "Check document templates", note: "3 document templates are deprecated and not updated." },
+    ]);
+    report.documentTemplates = 1;
+    expect(buildRunLog(success, report, context).groups.at(-1)?.rows[0].note).toBe("1 document template is deprecated and not updated.");
+  });
+
+  it("warns about document templates when they could not be listed", () => {
+    const report = renamedReport();
+    report.documentTemplates = null;
+    expect(buildRunLog(success, report, context).groups.at(-1)?.rows[0].note).toBe(
+      "Document templates could not be listed; they are deprecated and not updated.",
+    );
+  });
+
+  it("does not warn about document templates without a rename or without templates", () => {
+    const notRenamed = new RenameReport();
+    notRenamed.documentTemplates = 3;
+    expect(titles(buildRunLog(cancelled, notRenamed, context))).not.toContain("Code and reports");
+    expect(titles(buildRunLog(success, renamedReport(), context))).not.toContain("Code and reports");
+  });
+
+  it("has no code and reports group without changed actions or renamed datasets", () => {
+    const report = renamedReport();
+    report.addResult("Datasets", fakeUnitInfo("d1", "DataSets$DataSet", "MyModule", "DS_Order"), changed());
+    expect(titles(buildRunLog(success, report, context))).not.toContain("Code and reports");
+  });
+
   it("leaves out units changed without counts, such as refresh saves", () => {
     const report = renamedReport();
     report.addResult("Refresh pages", other, changed({ renamedVariables: 0 }));
@@ -163,6 +282,11 @@ describe("changeNote", () => {
     expect(changeNote(1, 2, 0)).toBe("1 variable, 2 references");
     expect(changeNote(0, 1, 3)).toBe("1 reference, 3 associations");
     expect(changeNote(0, 0, 0)).toBeNull();
+  });
+
+  it("counts exposed names", () => {
+    expect(changeNote(0, 1, 0, 1)).toBe("1 reference, 1 exposed name");
+    expect(changeNote(0, 0, 0, 3)).toBe("3 exposed names");
   });
 });
 

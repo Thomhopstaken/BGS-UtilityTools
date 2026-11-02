@@ -15,6 +15,23 @@ function setup() {
 
 const info = fakeUnitInfo("p1", "Pages$Page", "MyModule", "Customer_Edit");
 
+describe("ReferenceUpdater with onlyProperties", () => {
+  it("rewrites only the listed properties", async () => {
+    const renames = new QualifiedNameRenames();
+    renames.add("MyModule.Order", "MyModule.Purchase");
+    const updater = new ReferenceUpdater(
+      { documents: "consumed REST services", unitType: "Rest$ConsumedRestService", onlyProperties: new Set(["entity"]) },
+      fakeUnitAccess<Primitives.UnitBase>([]),
+      renames,
+    );
+    const element = { $Type: "ImportMappings$ImportObjectMappingElement", entity: "MyModule.Order", documentation: "MyModule.Order" };
+    const unit = { $Type: "Rest$ConsumedRestService", name: "CRS", operations: [element] } as unknown as Primitives.UnitBase;
+    expect(await updater.update(unit, fakeUnitInfo("c1", "Rest$ConsumedRestService", "MyModule", "CRS"))).toEqual({ ...UNCHANGED, changed: true, updatedReferences: 1 });
+    expect(element).toMatchObject({ entity: "MyModule.Purchase", documentation: "MyModule.Order" });
+    expect(updater.onlyProperties).toEqual(new Set(["entity"]));
+  });
+});
+
 describe("ReferenceUpdater", () => {
   it("has the reference metadata", () => {
     const { updater, access } = setup();

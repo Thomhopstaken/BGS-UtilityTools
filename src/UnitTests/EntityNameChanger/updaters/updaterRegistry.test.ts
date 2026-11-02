@@ -2,6 +2,7 @@ import type { Primitives } from "@mendix/extensions-api";
 import { describe, expect, it } from "vitest";
 import { AssociationRenamePlan } from "../../../EntityNameChanger/framework/AssociationRenamePlan";
 import { DocumentNameRegistry } from "../../../EntityNameChanger/framework/DocumentNameRegistry";
+import { MessageDefinitionUsage } from "../../../EntityNameChanger/framework/MessageDefinitionUsage";
 import { QualifiedNameRenames } from "../../../EntityNameChanger/framework/QualifiedNameRenames";
 import { fakeContext, fakeUnitInfo } from "../helpers/fakes";
 import { AssociationUpdater } from "../../../EntityNameChanger/updaters/domainModels/AssociationUpdater";
@@ -31,6 +32,7 @@ const API_NAMES = [
   "exportMappings",
   "jsonStructures",
   "messageDefinitions",
+  "messageDefinitions2",
   "javaActions",
   "javaScriptActions",
   "documentTemplates",
@@ -41,7 +43,9 @@ const API_NAMES = [
   "publishedODataServices2",
   "publishedWebServices",
   "consumedRestServices",
+  "consumedODataServices",
   "mlMappingDocuments",
+  "viewEntitySourceDocuments",
 ];
 const model = Object.fromEntries(API_NAMES.map((name) => [name, { api: name }])) as unknown as AppModel;
 
@@ -55,11 +59,15 @@ const PLAN_LABELS = [
   "Import mappings (plan)",
   "Export mappings (plan)",
   "JSON structures (plan)",
-  "Message definitions",
-  "Java actions",
-  "JavaScript actions",
-  "Document templates",
-  "Datasets",
+  "Message definitions (plan)",
+  "Message definition documents (plan)",
+  "Datasets (plan)",
+  "View entity source documents (plan)",
+  "Java actions (plan)",
+  "JavaScript actions (plan)",
+  "Published REST services (plan)",
+  "Published OData services (plan)",
+  "Published web services (plan)",
   "Associations (plan)",
 ];
 
@@ -74,10 +82,25 @@ const RENAME_LABELS = [
   "Import mappings",
   "Export mappings",
   "JSON structures",
+  "Message definitions",
+  "Message definition documents",
+  "Datasets",
+  "View entity source documents",
+  "Java actions",
+  "JavaScript actions",
+  "Published REST services",
+  "Published OData services",
+  "Published web services",
 ];
 
 const REFERENCE_LABELS = [
+  "References in view entity source documents",
   "References in domain models",
+  "References in Java actions",
+  "References in JavaScript actions",
+  "References in consumed REST services",
+  "References in consumed OData services",
+  "References in ML model mappings",
   "References in microflows",
   "References in nanoflows",
   "References in rules",
@@ -89,8 +112,8 @@ const REFERENCE_LABELS = [
   "References in import mappings",
   "References in export mappings",
   "References in message definitions",
+  "References in message definition documents",
   "References in datasets",
-  "References in document templates",
   "References in scheduled events",
   "References in published REST services",
   "References in published OData services",
@@ -101,12 +124,17 @@ const REFRESH_LABELS = ["Refresh pages", "Refresh snippets"];
 
 const context = fakeContext();
 
-function create(renames = QualifiedNameRenames.forEntity(context), associationPlan = new AssociationRenamePlan()) {
+function create(
+  renames = QualifiedNameRenames.forEntity(context),
+  associationPlan = new AssociationRenamePlan(),
+  messageDefinitionUsage = new MessageDefinitionUsage(),
+) {
   return createUpdaters(model, {
     context,
     documentNames: new DocumentNameRegistry(),
     renames,
     associationPlan,
+    messageDefinitionUsage,
   });
 }
 
@@ -146,25 +174,33 @@ describe("createUpdaters", () => {
 
   it("titles the plan steps", () => {
     const titles = all().map((u) => u.title).filter((t) => t !== undefined);
-    expect(titles).toEqual(["Planning microflows", "Planning nanoflows", "Planning rules", "Planning pages", "Planning snippets", "Planning workflows", "Planning import mappings", "Planning export mappings", "Planning JSON structures", "Planning associations", "Refreshing pages", "Refreshing snippets"]);
+    expect(titles).toEqual([
+      "Planning microflows",
+      "Planning nanoflows",
+      "Planning rules",
+      "Planning pages",
+      "Planning snippets",
+      "Planning workflows",
+      "Planning import mappings",
+      "Planning export mappings",
+      "Planning JSON structures",
+      "Planning message definitions",
+      "Planning message definition documents",
+      "Planning datasets",
+      "Planning view entity source documents",
+      "Planning Java actions",
+      "Planning JavaScript actions",
+      "Planning published REST services",
+      "Planning published OData services",
+      "Planning published web services",
+      "Planning associations",
+      "Refreshing pages",
+      "Refreshing snippets",
+    ]);
   });
 
-  it("implements the flow and page planners, every renamer and every reference updater", () => {
-    expect(all().filter((u) => u.implemented).map((u) => u.label)).toEqual([
-      "Microflows (plan)",
-      "Nanoflows (plan)",
-      "Rules (plan)",
-      "Pages (plan)",
-      "Snippets (plan)",
-      "Workflows (plan)",
-      "Import mappings (plan)",
-      "Export mappings (plan)",
-      "JSON structures (plan)",
-      "Associations (plan)",
-      ...RENAME_LABELS,
-      ...REFERENCE_LABELS,
-      ...REFRESH_LABELS,
-    ]);
+  it("implements every updater; no stubs are left", () => {
+    expect(all().filter((u) => u.implemented).map((u) => u.label)).toEqual([...PLAN_LABELS, ...RENAME_LABELS, ...REFERENCE_LABELS, ...REFRESH_LABELS]);
   });
 
   it("passes the matching model api and unit type to the flow and page updaters", () => {
@@ -195,6 +231,14 @@ describe("createUpdaters", () => {
       ["Import mappings", "ImportMappings$ImportMapping", "importMappings"],
       ["Export mappings", "ExportMappings$ExportMapping", "exportMappings"],
       ["JSON structures", "JsonStructures$JsonStructure", "jsonStructures"],
+      ["Message definitions", "MessageDefinitions$MessageDefinitionCollection", "messageDefinitions"],
+      ["Message definition documents", "MessageDefinitions$MessageDefinition2", "messageDefinitions2"],
+      ["Datasets", "DataSets$DataSet", "dataSets"],
+      ["Java actions", "JavaActions$JavaAction", "javaActions"],
+      ["JavaScript actions", "JavaScriptActions$JavaScriptAction", "javaScriptActions"],
+      ["Published REST services", "Rest$PublishedRestService", "publishedRestServices"],
+      ["Published OData services", "ODataPublish$PublishedODataService2", "publishedODataServices2"],
+      ["Published web services", "WebServices$PublishedWebService", "publishedWebServices"],
     ] as const) {
       for (const suffix of ["", " (plan)"]) {
         expect(byLabel(label + suffix, groups)).toBeInstanceOf(DocumentUpdater);
@@ -203,12 +247,20 @@ describe("createUpdaters", () => {
       }
     }
     expect(byLabel("Associations", groups).access).toBe(model.domainModels);
-    expect(byLabel("Datasets", groups).unitType).toBe("DataSets$DataSet");
   });
 
-  it("updates references in domain models before flows and pages", () => {
+  it("updates references in view entity queries, domain models, then Java/JavaScript actions, consumed services and ML mappings, before flows and pages", () => {
     const labels = create().referenceUpdaters.map((u) => u.label);
-    expect(labels[0]).toBe("References in domain models");
+    expect(labels.slice(0, 7)).toEqual([
+      "References in view entity source documents",
+      "References in domain models",
+      "References in Java actions",
+      "References in JavaScript actions",
+      "References in consumed REST services",
+      "References in consumed OData services",
+      "References in ML model mappings",
+    ]);
+    expect(labels.indexOf("References in ML model mappings")).toBeLessThan(labels.indexOf("References in microflows"));
     expect(labels.indexOf("References in domain models")).toBeLessThan(labels.indexOf("References in pages"));
   });
 
@@ -219,8 +271,10 @@ describe("createUpdaters", () => {
       expect(updater).toBeInstanceOf(ReferenceUpdater);
       expect(updater.access).toBe(model[type.api]);
       expect(updater.unitType).toBe(type.unitType);
+      expect((updater as ReferenceUpdater).onlyProperties).toBe(type.onlyProperties);
     }
     expect(byLabel("References in message definitions", groups).access).toBe(model.messageDefinitions);
+    expect(byLabel("References in microflows", groups)).toMatchObject({ onlyProperties: undefined });
   });
 
   it("refreshes pages and snippets with their model api", () => {
@@ -286,6 +340,218 @@ describe("createUpdaters", () => {
 
   it("documents the excluded types with a reason", () => {
     expect(EXCLUDED_DOCUMENT_TYPES.every((e) => e.label.length > 0 && e.reason.length > 0)).toBe(true);
+  });
+
+  it("never touches document templates", () => {
+    expect(all().some((u) => u.unitType === "DocumentTemplates$DocumentTemplate" || u.access === model.documentTemplates)).toBe(false);
+    expect(REFERENCE_DOCUMENT_TYPES.some((t) => t.api === "documentTemplates")).toBe(false);
+    expect(EXCLUDED_DOCUMENT_TYPES.map((e) => e.label)).toContain("Document templates");
+  });
+
+  it("renames a Java action and its parameter, and rewrites callers and its types", async () => {
+    const groups = create();
+    const parameter = {
+      $Type: "JavaActions$JavaActionParameter",
+      name: "Order",
+      actionParameterType: { $Type: "CodeActions$BasicParameterType", type: { $Type: "CodeActions$ConcreteEntityType", entity: "MyModule.Order" } },
+    };
+    const action = {
+      $Type: "JavaActions$JavaAction",
+      name: "JA_Order_Send",
+      actionParameters: [parameter],
+      actionReturnType: { $Type: "CodeActions$VoidType" },
+    } as unknown as Primitives.UnitBase;
+    const info = fakeUnitInfo("ja", "JavaActions$JavaAction", "MyModule", "JA_Order_Send");
+    await byLabel("Java actions (plan)", groups).update(action, info);
+    expect(await byLabel("Java actions", groups).update(action, info)).toMatchObject({ changed: true, renamedTo: "JA_Purchase_Send", renamedVariables: 1 });
+    expect(parameter.name).toBe("Purchase");
+
+    expect(await byLabel("References in Java actions", groups).update(action, info)).toMatchObject({ updatedReferences: 1 });
+    expect(parameter.actionParameterType.type.entity).toBe("MyModule.Purchase");
+
+    const mapping = { $Type: "Microflows$JavaActionParameterMapping", parameter: "MyModule.JA_Order_Send.Order" };
+    const call = { $Type: "Microflows$JavaActionCallAction", javaAction: "MyModule.JA_Order_Send", parameterMappings: [mapping] };
+    const flow = { $Type: "Microflows$Microflow", name: "ACT_Send", objectCollection: { objects: [call] } } as unknown as Primitives.UnitBase;
+    await byLabel("References in microflows", groups).update(flow, fakeUnitInfo("mf", "Microflows$Microflow", "MyModule", "ACT_Send"));
+    expect(call.javaAction).toBe("MyModule.JA_Purchase_Send");
+    expect(mapping.parameter).toBe("MyModule.JA_Purchase_Send.Purchase");
+  });
+
+  it("renames a definition in a message definition collection and rewrites mapping references", async () => {
+    const groups = create();
+    const definition = {
+      $Type: "MessageDefinitions$EntityMessageDefinition",
+      name: "Order",
+      exposedEntity: { $Type: "MessageDefinitions$ExposedEntity", entity: "MyModule.Order", exposedName: "Order", children: [] },
+    };
+    const collection = { $Type: "MessageDefinitions$MessageDefinitionCollection", name: "MD_Messages", messageDefinitions: [definition] } as unknown as Primitives.UnitBase;
+    const info = fakeUnitInfo("mdc", "MessageDefinitions$MessageDefinitionCollection", "MyModule", "MD_Messages");
+    await byLabel("Message definitions (plan)", groups).update(collection, info);
+    expect(await byLabel("Message definitions", groups).update(collection, info)).toMatchObject({ changed: true, renamedTo: null, renamedVariables: 1 });
+    expect(definition.name).toBe("Purchase");
+    const mapping = { $Type: "ImportMappings$ImportMapping", name: "IMM", messageDefinition: "MyModule.MD_Messages.Order" } as unknown as Primitives.UnitBase;
+    await byLabel("References in import mappings", groups).update(mapping, fakeUnitInfo("imm", "ImportMappings$ImportMapping", "MyModule", "IMM"));
+    expect((mapping as unknown as { messageDefinition: string }).messageDefinition).toBe("MyModule.MD_Messages.Purchase");
+  });
+
+  it("rewrites only mapping references in a consumed REST service, not its API text", async () => {
+    const renames = QualifiedNameRenames.forEntity(context);
+    const groups = create(renames);
+    renames.addDocument("MyModule", "ACT_Order_Map", "ACT_Purchase_Map");
+    const root = {
+      $Type: "ImportMappings$ImportObjectMappingElement",
+      entity: "MyModule.Order",
+      association: null,
+      mappingMicroflowCall: { $Type: "ImportMappings$MappingMicroflowCall", microflow: "MyModule.ACT_Order_Map", parameterMappings: [] },
+      children: [],
+    };
+    const service = {
+      $Type: "Rest$ConsumedRestService",
+      name: "CRS_Orders",
+      openApiFile: { $Type: "Rest$OpenApiFile", content: '{"ref": "MyModule.Order"}' },
+      operations: [{ $Type: "Rest$RestOperation", name: "GetOrder", responseHandling: { $Type: "Rest$ImplicitMappingResponseHandling", rootMappingElement: root } }],
+    };
+    const result = await byLabel("References in consumed REST services", groups).update(
+      service as unknown as Primitives.UnitBase,
+      fakeUnitInfo("crs", "Rest$ConsumedRestService", "MyModule", "CRS_Orders"),
+    );
+    expect(result).toMatchObject({ changed: true, updatedReferences: 2 });
+    expect(root.entity).toBe("MyModule.Purchase");
+    expect(root.mappingMicroflowCall.microflow).toBe("MyModule.ACT_Purchase_Map");
+    expect(service.openApiFile.content).toBe('{"ref": "MyModule.Order"}');
+  });
+
+  it("renames only the renamed view entity's own source document", async () => {
+    const groups = create();
+    const own = { $Type: "DomainModels$ViewEntitySourceDocument", name: "Order", oql: "SELECT 1" } as unknown as Primitives.UnitBase & { name: string };
+    const other = { $Type: "DomainModels$ViewEntitySourceDocument", name: "OrderOverview", oql: "FROM MyModule.Order" } as unknown as Primitives.UnitBase & { name: string };
+    const ownInfo = fakeUnitInfo("v1", "DomainModels$ViewEntitySourceDocument", "MyModule", "Order");
+    const otherInfo = fakeUnitInfo("v2", "DomainModels$ViewEntitySourceDocument", "MyModule", "OrderOverview");
+    await byLabel("View entity source documents (plan)", groups).update(own, ownInfo);
+    await byLabel("View entity source documents (plan)", groups).update(other, otherInfo);
+    expect(await byLabel("View entity source documents", groups).update(own, ownInfo)).toMatchObject({ changed: true, renamedTo: "Purchase" });
+    expect(await byLabel("View entity source documents", groups).update(other, otherInfo)).toMatchObject({ changed: false, renamedTo: null });
+    expect([own.name, other.name]).toEqual(["Purchase", "OrderOverview"]);
+  });
+
+  it("rewrites the entity and its associations in view entity queries, not literals or other entities", async () => {
+    const renames = QualifiedNameRenames.forEntity(context);
+    renames.addDocument("MyModule", "Order_Customer", "Purchase_Customer");
+    const groups = create(renames);
+    const document = {
+      $Type: "DomainModels$ViewEntitySourceDocument",
+      name: "OrderOverview",
+      oql: "SELECT o.Total AS Total FROM MyModule.Order AS o JOIN o/MyModule.Order_Customer/MyModule.Customer AS c JOIN MyModule.OrderLine AS l WHERE c.Name = 'MyModule.Order'",
+    };
+    const result = await byLabel("References in view entity source documents", groups).update(
+      document as unknown as Primitives.UnitBase,
+      fakeUnitInfo("v", "DomainModels$ViewEntitySourceDocument", "MyModule", "OrderOverview"),
+    );
+    expect(result).toMatchObject({ changed: true, updatedReferences: 1 });
+    expect(document.oql).toBe(
+      "SELECT o.Total AS Total FROM MyModule.Purchase AS o JOIN o/MyModule.Purchase_Customer/MyModule.Customer AS c JOIN MyModule.OrderLine AS l WHERE c.Name = 'MyModule.Order'",
+    );
+    expect(document.name).toBe("OrderOverview");
+  });
+
+  it("rewrites only entity and attribute references in ML model mappings, never renaming them", async () => {
+    const groups = create();
+    const tensor = { $Type: "MLMappings$TensorMappingElement", attribute: "MyModule.Order.Total", tensorName: "MyModule.Order", staticTensorShape: [], tensorShape: [] };
+    const input = { $Type: "MLMappings$MLModelEntityMappings", entity: "MyModule.Order", mappings: [tensor] };
+    const output = { $Type: "MLMappings$MLModelEntityMappings", entity: "MyModule.OrderLine", mappings: [] };
+    const metadata = { $Type: "MLMappings$MLModelMetadata", name: "MyModule.Order", value: "MyModule.Order" };
+    const document = {
+      $Type: "MLMappings$MLMappingDocument",
+      name: "Order",
+      mlModelFileName: "MyModule.Order.onnx",
+      mlModelMappings: { $Type: "MLMappings$MLModelMappings", input, output },
+      mlModelMetadata: [metadata],
+    };
+    const result = await byLabel("References in ML model mappings", groups).update(
+      document as unknown as Primitives.UnitBase,
+      fakeUnitInfo("ml", "MLMappings$MLMappingDocument", "MyModule", "Order"),
+    );
+    expect(result).toMatchObject({ changed: true, updatedReferences: 2, renamedTo: null });
+    expect(input.entity).toBe("MyModule.Purchase");
+    expect(tensor.attribute).toBe("MyModule.Purchase.Total");
+    expect(output.entity).toBe("MyModule.OrderLine");
+    expect([document.name, document.mlModelFileName, tensor.tensorName, metadata.name, metadata.value]).toEqual([
+      "Order",
+      "MyModule.Order.onnx",
+      "MyModule.Order",
+      "MyModule.Order",
+      "MyModule.Order",
+    ]);
+    expect(all().some((u) => u.unitType === "MLMappings$MLMappingDocument" && !(u instanceof ReferenceUpdater))).toBe(false);
+    expect(EXCLUDED_DOCUMENT_TYPES.map((e) => e.label)).toContain("ML model mappings");
+  });
+
+  it("renames a published OData service and its exposed names only when opted in", async () => {
+    const odata = () => ({
+      $Type: "ODataPublish$PublishedODataService2",
+      name: "POS_Order",
+      path: "odata/Order/v1",
+      entityTypes: [{ $Type: "ODataPublish$EntityType", entity: "MyModule.Order", exposedName: "Order", childMembers: [] }],
+      entitySets: [{ $Type: "ODataPublish$EntitySet", entityType: "MyModule.Order", exposedName: "Orders" }],
+    });
+    const info = fakeUnitInfo("pos", "ODataPublish$PublishedODataService2", "MyModule", "POS_Order");
+    for (const optIn of [false, true]) {
+      const optContext = fakeContext({ renameExposedNames: optIn });
+      const groups = createUpdaters(model, {
+        context: optContext,
+        documentNames: new DocumentNameRegistry(),
+        renames: QualifiedNameRenames.forEntity(optContext),
+        associationPlan: new AssociationRenamePlan(),
+        messageDefinitionUsage: new MessageDefinitionUsage(),
+      });
+      const service = odata();
+      await byLabel("Published OData services (plan)", groups).update(service as unknown as Primitives.UnitBase, info);
+      const result = await byLabel("Published OData services", groups).update(service as unknown as Primitives.UnitBase, info);
+      expect(result).toMatchObject({ changed: true, renamedTo: "POS_Purchase", renamedExposedNames: optIn ? 2 : 0 });
+      expect(service.entityTypes[0].exposedName).toBe(optIn ? "Purchase" : "Order");
+      expect(service.entitySets[0].exposedName).toBe(optIn ? "Purchases" : "Orders");
+      expect(service.path).toBe("odata/Order/v1");
+    }
+  });
+
+  it("records the message definitions mappings use while planning them", async () => {
+    const usage = new MessageDefinitionUsage();
+    const groups = create(undefined, undefined, usage);
+    const mapping = {
+      $Type: "ExportMappings$ExportMapping",
+      name: "EMM_Customer",
+      messageDefinition: "MyModule.MD_Messages.Customer",
+      messageDefinition2: null,
+      jsonStructure: null,
+      parameterName: "Parameter",
+      rootMappingElements: [],
+    } as unknown as Primitives.UnitBase;
+    await byLabel("Export mappings (plan)", groups).update(mapping, fakeUnitInfo("emm", "ExportMappings$ExportMapping", "MyModule", "EMM_Customer"));
+    usage.addEntityDefinition("MyModule.MD_Messages.Customer");
+    expect(usage.mappingsOf("MyModule.MD_Messages")).toEqual(["MyModule.EMM_Customer"]);
+  });
+
+  it("records the message definitions that use the entity while planning them", async () => {
+    const usage = new MessageDefinitionUsage();
+    const groups = create(undefined, undefined, usage);
+    usage.add("MyModule.MD_Order", "MyModule.IMM_Order");
+    const definition = {
+      $Type: "MessageDefinitions$MessageDefinition2",
+      $ID: "md",
+      name: "MD_Order",
+      exposedEntity: { $Type: "MessageDefinitions$ExposedEntity", $ID: "exp", entity: "MyModule.Order", children: [] },
+    } as unknown as Primitives.UnitBase;
+    await byLabel("Message definition documents (plan)", groups).update(
+      definition,
+      fakeUnitInfo("md", "MessageDefinitions$MessageDefinition2", "MyModule", "MD_Order"),
+    );
+    expect(usage.mappingsOf("MyModule.MD_Order")).toEqual(["MyModule.IMM_Order"]);
+  });
+
+  it("never touches imported web services", () => {
+    expect(all().some((u) => u.unitType === "WebServices$ImportedWebService")).toBe(false);
+    expect(EXCLUDED_DOCUMENT_TYPES.map((e) => e.label)).toEqual(expect.arrayContaining(["Imported web services", "Consumed REST/OData services"]));
+    expect(EXCLUDED_DOCUMENT_TYPES.map((e) => e.label)).not.toContain("Published REST/OData/web services");
   });
 
   it("renames a JSON structure only after an entity mapping using it was planned", async () => {

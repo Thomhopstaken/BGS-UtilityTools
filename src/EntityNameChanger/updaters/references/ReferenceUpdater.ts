@@ -7,6 +7,8 @@ export type ReferenceUpdaterSpec = {
   // Plural document type, e.g. "microflows"; the label becomes "References in microflows".
   documents: string;
   unitType: string;
+  // Only these properties are rewritten; all string properties when absent.
+  onlyProperties?: ReadonlySet<string>;
 };
 
 // Reference pass: rewrites references to everything renamed (entity, documents, parameters). Runs last, after
@@ -17,18 +19,21 @@ export class ReferenceUpdater<TUnit extends Primitives.UnitBase = Primitives.Uni
   readonly implemented = true;
   readonly description = "Updating references to renamed entity, documents and parameters";
   readonly access: UnitAccess<TUnit>;
+  readonly onlyProperties?: ReadonlySet<string>;
   private readonly renames: QualifiedNameRenames;
 
   constructor(spec: ReferenceUpdaterSpec, access: UnitAccess<TUnit>, renames: QualifiedNameRenames) {
     this.label = `References in ${spec.documents}`;
     this.unitType = spec.unitType;
+    this.onlyProperties = spec.onlyProperties;
     this.access = access;
     this.renames = renames;
   }
 
   async update(unit: TUnit, info: Readonly<Primitives.UnitInfo>): Promise<UnitUpdateResult> {
-    console.debug(`${this.label}: checking ${info.moduleName}.${info.name} against ${this.renames.size} renames`);
-    const references = rewriteQualifiedNamesInUnit(unit, this.renames.map);
+    const scope = this.onlyProperties === undefined ? "all properties" : `[${[...this.onlyProperties].join(", ")}]`;
+    console.debug(`${this.label}: checking ${scope} of ${info.moduleName}.${info.name} against ${this.renames.size} renames`);
+    const references = rewriteQualifiedNamesInUnit(unit, this.renames.map, this.onlyProperties);
     if (references === 0) {
       return { ...UNCHANGED };
     }

@@ -4,6 +4,7 @@ import { isEntityQname, type RenameContext } from "../../framework/RenameContext
 import { entityOfDataType } from "../microflows/ReferenceCache";
 import { rewriteExpression } from "../shared/variableRewrite";
 import { type ModelElement, walkElements } from "../shared/elementWalker";
+import { rewriteUrlPlaceholders } from "../shared/urlPlaceholders";
 
 export type PageDocument = Pages.Page | Pages.Snippet;
 type DocumentParameter = Pages.PageParameter | Pages.SnippetParameter;
@@ -31,9 +32,6 @@ const PARAMETER_REFERENCES: Readonly<Record<string, readonly string[]>> = {
 // Properties holding an entity qualified name, and those holding a member name (Module.Entity.Member).
 const ENTITY_PROPERTIES = ["entity", "destinationEntity", "specialization"] as const;
 const MEMBER_PROPERTIES = ["attribute"] as const;
-
-// `{Param}` or `{Param/Attribute}` placeholders in a page URL. UNVERIFIED: placeholder syntax.
-const URL_PLACEHOLDER = /\{([A-Za-z_][A-Za-z0-9_]*)(?=[/}])/g;
 
 // Renames entity-typed page/snippet parameters and their usages within the same document.
 // Cross-document references (parameter mappings in callers) are left to Studio Pro.
@@ -168,14 +166,7 @@ export class PageHelper {
   }
 
   private rewriteUrl(url: string): string {
-    const newUrl = url.replace(URL_PLACEHOLDER, (match: string, name: string) => {
-      const newName = this.renames.get(name);
-      return newName === undefined ? match : `{${newName}`;
-    });
-    if (newUrl !== url) {
-      console.debug(`updated url '${url}' to '${newUrl}'`);
-    }
-    return newUrl;
+    return rewriteUrlPlaceholders(url, this.renames);
   }
 
   private referencesEntity(element: ModelElement): boolean {

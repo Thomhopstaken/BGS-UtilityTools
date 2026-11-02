@@ -1,9 +1,9 @@
 import type { ProgressDialogResult } from "@mendix/extensions-api";
 import { describe, expect, it } from "vitest";
 import type { EntityOption } from "../../EntityNameChanger/entityPicker";
-import { type RenameServiceDeps, runEntityRename } from "../../EntityNameChanger/renameService";
+import { countInScope, type RenameServiceDeps, runEntityRename } from "../../EntityNameChanger/renameService";
 import type { AppModel } from "../../EntityNameChanger/updaters/updaterRegistry";
-import { fakeProgressRunner } from "./helpers/fakes";
+import { fakeContext, fakeProgressRunner, fakeUnitInfo } from "./helpers/fakes";
 
 // Marker objects: the dialog is faked, so no model API is called.
 const model = new Proxy({} as Record<string, unknown>, {
@@ -59,9 +59,34 @@ describe("runEntityRename", () => {
     expect(result.kind === "ran" && result.report.entitySkipReason).toBe("cancelled by user; nothing was changed");
   });
 
+  it("puts the exposed names choice in the context, off by default", async () => {
+    const { serviceDeps } = deps({ result: "Success" } as ProgressDialogResult);
+    const off = await runEntityRename(serviceDeps, { entity: order, newName: "Purchase" });
+    const on = await runEntityRename(serviceDeps, { entity: order, newName: "Purchase", renameExposedNames: true });
+    expect(off.kind === "ran" && off.context.renameExposedNames).toBe(false);
+    expect(on.kind === "ran" && on.context.renameExposedNames).toBe(true);
+  });
+
   it("allows a name that differs only in case from a taken one", async () => {
     const { runner, serviceDeps } = deps({ result: "Success" } as ProgressDialogResult, { entityNamesInModule: ["Order", "purchase"] });
     expect((await runEntityRename(serviceDeps, { entity: order, newName: "Purchase" })).kind).toBe("ran");
     expect(runner.titles).toHaveLength(1);
+  });
+});
+
+describe("countInScope", () => {
+  it("counts units in the app's own modules only", async () => {
+    const context = fakeContext({ excludedModules: new Set(["System", "Atlas_Core"]) });
+    const infos = [
+      fakeUnitInfo("t1", "DocumentTemplates$DocumentTemplate", "MyModule", "DT_Order"),
+      fakeUnitInfo("t2", "DocumentTemplates$DocumentTemplate", "Other", "DT_Invoice"),
+      fakeUnitInfo("t3", "DocumentTemplates$DocumentTemplate", "Atlas_Core", "DT_Base"),
+      { $ID: "t4", $Type: "DocumentTemplates$DocumentTemplate", name: "DT_Loose" } as never,
+    ];
+    expect(await countInScope({ getUnitsInfo: async () => infos }, context)).toBe(2);
+  });
+
+  it("passes a listing failure on", async () => {
+    await expect(countInScope({ getUnitsInfo: () => Promise.reject(new Error("no api")) }, fakeContext())).rejects.toThrow("no api");
   });
 });

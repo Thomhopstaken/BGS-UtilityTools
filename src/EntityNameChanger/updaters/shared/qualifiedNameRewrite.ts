@@ -35,9 +35,21 @@ export function rewriteQualifiedNames(value: string, renames: QualifiedNameMap):
   return newValue;
 }
 
+// True when value holds qname or a member of it (qname.Member), outside quoted literals.
+export function referencesQualifiedName(value: string, qname: string): boolean {
+  for (const match of value.matchAll(DOTTED_NAMES)) {
+    const name = match[1];
+    if (name !== undefined && (name === qname || name.startsWith(`${qname}.`))) {
+      return true;
+    }
+  }
+  return false;
+}
+
 // Rewrites every string property (and string array item) of every element in the unit.
-// Returns the number of changed values.
-export function rewriteQualifiedNamesInUnit(root: object, renames: QualifiedNameMap): number {
+// onlyProperties: rewrite only these keys (nested elements are still walked), for documents whose other text mirrors
+// an external API. Returns the number of changed values.
+export function rewriteQualifiedNamesInUnit(root: object, renames: QualifiedNameMap, onlyProperties?: ReadonlySet<string>): number {
   let changes = 0;
   const rewrite = (value: string): string => {
     const newValue = rewriteQualifiedNames(value, renames);
@@ -48,7 +60,7 @@ export function rewriteQualifiedNamesInUnit(root: object, renames: QualifiedName
   };
   walkElements(root, (element: ModelElement) => {
     for (const key of Object.keys(element)) {
-      if (key.startsWith("$")) {
+      if (key.startsWith("$") || (onlyProperties !== undefined && !onlyProperties.has(key))) {
         continue;
       }
       const value = element[key];

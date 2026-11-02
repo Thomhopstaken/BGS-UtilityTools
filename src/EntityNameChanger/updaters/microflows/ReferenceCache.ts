@@ -88,6 +88,15 @@ export function javaActionSignature(javaAction: CodeActions.CodeAction): JavaAct
   return signature;
 }
 
+// Entity of a Java/JavaScript action type: a concrete entity or a list of one.
+export function entityOfCodeActionType(type: CodeActions.Type | null | undefined): string | null {
+  if (type === null || type === undefined) {
+    return null;
+  }
+  const entityType = type.$Type === "CodeActions$ListType" ? type.parameter : type;
+  return entityType.$Type === "CodeActions$ConcreteEntityType" ? entityType.entity : null;
+}
+
 function typeParameterOf(type: CodeActions.Type): string | null {
   const entityType = type.$Type === "CodeActions$ListType" ? type.parameter : type;
   return entityType.$Type === "CodeActions$ParameterizedEntityType" ? entityType.typeParameter : null;

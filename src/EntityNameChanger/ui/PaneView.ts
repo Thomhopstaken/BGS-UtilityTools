@@ -3,7 +3,16 @@ import { type Status, statusLabel, statusRole } from "../../shared/design/status
 import type { EntityOption } from "../entityPicker";
 import type { PaneViewPort } from "../EntityNameChangerPane";
 import type { PaneField } from "../validation";
-import { countLabel, countRows, isOpenByDefault, onlyProblems, type RowTone, type RunLog, type RunLogGroup } from "./runLog";
+import {
+  countLabel,
+  countRows,
+  isOpenByDefault,
+  onlyProblems,
+  type RowTarget,
+  type RowTone,
+  type RunLog,
+  type RunLogGroup,
+} from "./runLog";
 
 // The pane's DOM (pane.html); every element is looked up once, so a markup mismatch fails at load.
 export class PaneView implements PaneViewPort {
@@ -12,6 +21,7 @@ export class PaneView implements PaneViewPort {
   private readonly moduleSelect: HTMLSelectElement;
   private readonly entitySelect: HTMLSelectElement;
   private readonly nameInput: HTMLInputElement;
+  private readonly exposedNamesBox: HTMLInputElement;
   private readonly submitButton: HTMLButtonElement;
   private readonly errors: Record<PaneField, { control: HTMLInputElement | HTMLSelectElement; message: HTMLElement }>;
   private readonly outcome: HTMLElement;
@@ -24,6 +34,7 @@ export class PaneView implements PaneViewPort {
   private readonly clearButton: HTMLButtonElement;
   private lastLog: RunLog | null = null;
   private busy = false;
+  private openHandler: ((target: RowTarget) => void) | null = null;
 
   constructor(root: HTMLElement) {
     this.doc = root.ownerDocument;
@@ -31,6 +42,7 @@ export class PaneView implements PaneViewPort {
     this.moduleSelect = requireElement(root, "#moduleDropdown", HTMLSelectElement);
     this.entitySelect = requireElement(root, "#entityDropdown", HTMLSelectElement);
     this.nameInput = requireElement(root, "#nameInput", HTMLInputElement);
+    this.exposedNamesBox = requireElement(root, "#exposedNamesBox", HTMLInputElement);
     this.submitButton = requireElement(root, "#changeName", HTMLButtonElement);
     this.errors = {
       module: { control: this.moduleSelect, message: requireElement(root, "#moduleError", HTMLElement) },
@@ -69,6 +81,11 @@ export class PaneView implements PaneViewPort {
     this.clearButton.addEventListener("click", handler);
   }
 
+  // A run log row with a target was clicked.
+  onOpenDocument(handler: (target: RowTarget) => void): void {
+    this.openHandler = handler;
+  }
+
   setModules(names: readonly string[], selected = ""): void {
     this.fillSelect(this.moduleSelect, "-- Select a module --", names.map((name) => ({ value: name, text: name })), selected);
     console.debug(`module picker: ${names.length} modules, selected '${this.moduleSelect.value}'`);
@@ -81,8 +98,13 @@ export class PaneView implements PaneViewPort {
     console.debug(`entity picker: ${options?.length ?? 0} entities, selected '${this.entitySelect.value}'`);
   }
 
-  readRequest(): { moduleName: string; entityId: string; newName: string } {
-    return { moduleName: this.moduleSelect.value, entityId: this.entitySelect.value, newName: this.nameInput.value };
+  readRequest(): { moduleName: string; entityId: string; newName: string; renameExposedNames: boolean } {
+    return {
+      moduleName: this.moduleSelect.value,
+      entityId: this.entitySelect.value,
+      newName: this.nameInput.value,
+      renameExposedNames: this.exposedNamesBox.checked,
+    };
   }
 
   showFieldError(field: PaneField, message: string): void {
@@ -132,7 +154,7 @@ export class PaneView implements PaneViewPort {
   // Second guard next to the modal progress dialog: no new run can start while one is busy.
   setBusy(busy: boolean): void {
     this.busy = busy;
-    for (const control of [this.moduleSelect, this.nameInput, this.submitButton, this.clearButton]) {
+    for (const control of [this.moduleSelect, this.nameInput, this.exposedNamesBox, this.submitButton, this.clearButton]) {
       control.disabled = busy;
     }
     this.entitySelect.disabled = busy || this.moduleSelect.value === "";
@@ -182,7 +204,15 @@ export class PaneView implements PaneViewPort {
     const list = details.appendChild(createElement(this.doc, "ul", "bgs-logrows"));
     for (const row of group.rows) {
       const item = list.appendChild(createElement(this.doc, "li", `bgs-logrow bgs-logrow--${row.tone}`));
-      item.appendChild(createElement(this.doc, "span", "bgs-logrow__what", row.what));
+      const target = row.target;
+      if (target === undefined) {
+        item.appendChild(createElement(this.doc, "span", "bgs-logrow__what", row.what));
+      } else {
+        const link = item.appendChild(createElement(this.doc, "button", "bgs-logrow__what bgs-logrow__link", row.what));
+        link.type = "button";
+        link.title = "Open in Studio Pro";
+        link.addEventListener("click", () => this.openHandler?.(target));
+      }
       if (row.note !== undefined) {
         item.appendChild(createElement(this.doc, "span", "bgs-logrow__note", row.note));
       }

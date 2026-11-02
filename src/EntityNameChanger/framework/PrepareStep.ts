@@ -6,6 +6,8 @@ export type PrepareStepDeps = {
   // Fresh check of the entity and its new name; returns an error message or null.
   validate(): Promise<string | null>;
   getModulesTree(): Promise<readonly DocumentTreeNode[]>;
+  // Document templates in the app's own modules; listed only, never loaded.
+  countDocumentTemplates(): Promise<number>;
   // Empty until this step runs; shared with the updaters.
   documentNames: DocumentNameRegistry;
 };
@@ -30,6 +32,18 @@ export class PrepareStep implements EntityStep {
     started = Date.now();
     this.deps.documentNames.load(await this.deps.getModulesTree());
     console.info(`prepare: document names loaded in ${Date.now() - started} ms`);
+    await this.countDocumentTemplates(report);
     return true;
+  }
+
+  // Document templates are skipped; the count only drives a run log warning, so a failure does not stop the job.
+  private async countDocumentTemplates(report: RenameReport): Promise<void> {
+    try {
+      report.documentTemplates = await this.deps.countDocumentTemplates();
+      console.info(`prepare: ${report.documentTemplates} document templates, not updated`);
+    } catch (error: unknown) {
+      report.documentTemplates = null;
+      console.info(`prepare: could not list document templates: ${error}`);
+    }
   }
 }

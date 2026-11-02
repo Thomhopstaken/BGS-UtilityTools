@@ -16,6 +16,8 @@ export type RenameContext = {
   readonly excludedModules: ReadonlySet<string>;
   // Other entity names containing oldName (e.g. OrderLine for Order); these are never rewritten.
   readonly protectedNames: readonly string[];
+  // Opt-in from the pane: also rename exposed names in published services (changes the published API).
+  readonly renameExposedNames: boolean;
 };
 
 export type RenameContextInput = {
@@ -26,6 +28,8 @@ export type RenameContextInput = {
   newName: string;
   excludedModules: ReadonlySet<string>;
   allEntityNames: readonly string[];
+  // Off when absent.
+  renameExposedNames?: boolean;
 };
 
 export function createRenameContext(input: RenameContextInput): RenameContext {
@@ -39,9 +43,10 @@ export function createRenameContext(input: RenameContextInput): RenameContext {
     newQualifiedName: `${input.moduleName}.${input.newName}`,
     excludedModules: input.excludedModules,
     protectedNames: getProtectedNames(input.allEntityNames, input.oldName),
+    renameExposedNames: input.renameExposedNames ?? false,
   };
   console.info(
-    `rename context: ${context.oldQualifiedName} -> ${context.newQualifiedName}, protected [${context.protectedNames.join(", ")}]`,
+    `rename context: ${context.oldQualifiedName} -> ${context.newQualifiedName}, protected [${context.protectedNames.join(", ")}], exposed names ${context.renameExposedNames ? "renamed" : "kept"}`,
   );
   return context;
 }

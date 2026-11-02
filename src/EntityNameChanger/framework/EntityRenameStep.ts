@@ -56,13 +56,14 @@ export class EntityRenameStep implements EntityStep {
       return problem;
     }
     const entity = domainModel.entities.find((e) => e.$ID === this.context.entityId)!;
+    const sourceDocument = viewEntitySourceDocument(entity);
     entity.name = this.context.newName;
     const associations = applyAssociationRenames(domainModel, this.associationPlan.get(this.context.domainModelId));
     const ownRenames = new Map([[this.context.oldQualifiedName, this.context.newQualifiedName]]);
     for (const association of associations) {
       ownRenames.set(`${this.context.moduleName}.${association.oldName}`, `${this.context.moduleName}.${association.newName}`);
     }
-    const references = rewriteQualifiedNamesInUnit(domainModel, ownRenames);
+    const references = rewriteQualifiedNamesInUnit(domainModel, ownRenames) - keepViewEntitySource(entity, sourceDocument);
     await this.domainModels.save(domainModel);
     report.updatedReferences += references;
     report.renamedAssociations += associations.length;
@@ -82,6 +83,27 @@ export class EntityRenameStep implements EntityStep {
     console.debug(`loaded domain model ${this.context.domainModelId}: ${domainModel === null ? "not found" : "found"}`);
     return domainModel;
   }
+}
+
+function oqlViewSource(entity: DomainModels.Entity): DomainModels.OqlViewEntitySource | null {
+  const source = entity.source as DomainModels.OqlViewEntitySource | null | undefined;
+  return source?.$Type === "DomainModels$OqlViewEntitySource" ? source : null;
+}
+
+function viewEntitySourceDocument(entity: DomainModels.Entity): string | null {
+  return oqlViewSource(entity)?.sourceDocument ?? null;
+}
+
+// A view entity keeps pointing to its source document until the document is renamed; the domain model reference pass
+// rewrites it then. Returns 1 when a rewrite was undone, so it is not counted.
+function keepViewEntitySource(entity: DomainModels.Entity, sourceDocument: string | null): number {
+  const source = oqlViewSource(entity);
+  if (sourceDocument === null || source === null || source.sourceDocument === sourceDocument) {
+    return 0;
+  }
+  console.info(`view entity ${entity.name}: source document kept as ${sourceDocument} until it is renamed`);
+  source.sourceDocument = sourceDocument;
+  return 1;
 }
 
 export function findEntityProblem(domainModel: DomainModels.DomainModel, context: RenameContext): string | null {

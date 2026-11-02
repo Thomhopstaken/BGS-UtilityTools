@@ -55,19 +55,19 @@ Studio Pro
 ### The rename flow, step by step
 
 1. **Startup** (`EntityNameChanger/main.ts`): applies the Studio Pro theme, mounts the pane and loads the app's own modules and their entities into the pickers.
-2. **Submit** (`EntityNameChangerPane.submit`): validates the request (`validation.ts`: name format, reserved names, a name already taken in the module). `renameService.runEntityRename` then builds the context, the updaters (`updaters/updaterRegistry.ts`) and the job.
+2. **Submit** (`EntityNameChangerPane.submit`): validates the request (`validation.ts`: name format, reserved names, a name already taken in the module). The "Also rename exposed names in published services" checkbox (off by default) ends up in `RenameContext.renameExposedNames`. `renameService.runEntityRename` then builds the context, the updaters (`updaters/updaterRegistry.ts`) and the job.
 3. **The job** (`framework/RenameJob.ts`) runs in Studio Pro's modal progress dialog, one step per updater. Each step lists its units (`getUnitsInfo`), skips Marketplace modules and System, and loads, updates and saves them in batches of 25 (`framework/RenamePlanner.ts`).
 
    | Phase | What it does |
    |---|---|
-   | Prepare | Checks the entity can be renamed and collects every document name per module (`DocumentNameRegistry`). Changes nothing. |
-   | Plan | Read-only. Microflows, nanoflows, rules, pages, snippets, workflows, mappings, JSON structures and associations decide which documents, parameters and associations get a new name. Every rename is recorded in `QualifiedNameRenames` (old → new qualified name). This is the only phase that calls `resolve()`. |
-   | Entity | `EntityRenameStep` renames the entity and the planned associations in its own domain model, and rewrites that domain model's references, in one save. |
-   | Rename | Applies the plan: associations in other modules, then documents, parameters and variables in flows, pages, workflows and mappings, with every expression that uses them. |
-   | References | `ReferenceUpdater` rewrites every renamed qualified name in every string property of each document type in `REFERENCE_DOCUMENT_TYPES`. Domain models go first. |
+   | Prepare | Checks the entity can be renamed, collects every document name per module (`DocumentNameRegistry`) and counts the app's document templates for the run log warning. Changes nothing. |
+   | Plan | Read-only. Microflows, nanoflows, rules, pages, snippets, workflows, mappings, JSON structures, message definitions, datasets, view entity source documents, Java and JavaScript actions, published REST/OData/web services, and associations decide which documents, parameters and associations get a new name. A JSON structure is renamed only when an entity mapping uses it. A published service uses the entity when it references the entity or a document renamed earlier in the plan. A view entity source document is renamed only when it is the renamed view entity's own source. Every rename is recorded in `QualifiedNameRenames` (old → new qualified name). This is the only phase that calls `resolve()`. Any error here stops the job before the entity is renamed. Stub updaters get no step. |
+   | Entity | `EntityRenameStep` renames the entity and the planned associations in its own domain model, and rewrites that domain model's references, in one save. A view entity keeps pointing to its old source document until the reference pass. |
+   | Rename | Applies the plan: associations in other modules, then documents, parameters and variables in flows, pages and the other document types, with every expression that uses them. Exposed names in published services are renamed here, only when opted in. |
+   | References | `ReferenceUpdater` rewrites every renamed qualified name in every string property of each document type in `REFERENCE_DOCUMENT_TYPES`. View entity queries (OQL) go first, so view entities are saved after their query is valid. Then domain models, then Java and JavaScript actions, consumed REST/OData services and ML model mappings, so their callers are saved after the types they provide are fixed. Consumed services and ML model mappings get an allow-list (`onlyProperties`: mapping, microflow, entity and attribute references), so text that mirrors the external API (OpenAPI, OData metadata) or the model file (tensor names, metadata) is never touched. |
    | Refresh | Saves changed pages and snippets again, so Studio Pro drops stale consistency errors. |
 
-4. **Result**: `framework/RenameReport.ts` collects what changed, what was skipped and what failed. The pane shows it as a run log (`ui/runLog.ts`), with a warning when navigation may point to renamed documents.
+4. **Result**: `framework/RenameReport.ts` collects what changed, what was skipped and what failed. The pane shows it as a run log (`ui/runLog.ts`), with warnings when published services got renamed exposed names (API clients must be updated), when navigation may point to renamed documents, when Java or JavaScript actions changed (their code is not updated), when datasets were renamed (report widgets are not updated), when a changed message definition is used by import or export mappings (they must be mapped again; the mapping planners record this in `MessageDefinitionUsage`), and when the app has document templates (never updated). Clicking a row about one document opens it in Studio Pro (`ui.editors.editDocument`).
 
 Names are matched exact-case, and a name that is part of another entity's name is left alone (`framework/NamingPolicy.ts`). A rename onto a name that already exists is skipped and counted.
 
@@ -140,7 +140,7 @@ studioPro
 
 **Expressions are opaque strings.** Microflow expressions and XPath constraints come through as raw text such as `"$Customer/Name + ' x'"`. The API doesn't parse them, so the tool rewrites `$Variable` tokens itself and skips quoted literals (`updaters/shared/variableRewrite.ts`).
 
-**Current limitations.** There's no built-in "rename with refactoring" operation, so the tool builds that refactoring by hand on top of raw model access. Navigation and Java/JavaScript source code are not reachable through the model API (see §6).
+**Current limitations.** There's no built-in "rename with refactoring" operation, so the tool builds that refactoring by hand on top of raw model access. Navigation, report widgets and Java/JavaScript source code are not reachable through the model API (see §6).
 
 ---
 
@@ -151,10 +151,13 @@ studioPro
 - **A document is checked only when it is saved.** Studio Pro does not re-check a document when a name it refers to appears later. So every document gets its last save after all the names it references exist, and pages and snippets get an extra refresh save.
 - **The typings don't always match runtime.** Rules have no `parameters` list at runtime, although the typings declare one. Nanoflows hold their parameters only in the object collection. Code guards against a missing property instead of trusting the type.
 - **`loadAll` loads 10 units by default.** The job always passes the number of units it wants.
+- **A changed message definition breaks its mappings.** Its import and export mappings no longer match its schema, and updating them in Studio Pro clears them. There's no way around this, so the run log lists those mappings per message definition.
 
 **Limitations**
 - **A failed run can't be repaired by running again.** The entity is renamed before the documents, and the rename map is not stored. After a failure or a cancel, the error list has to be fixed by hand. The run log says so.
 - **Navigation is not in the API.** Menu items, home pages and the login page that point to renamed documents are not updated; the run log warns instead.
+- **Action code and report widgets are not in the API.** Java/JavaScript action code and report widgets using a renamed dataset are not updated; the run log warns instead.
+- **Mappings of a changed message definition must be mapped again by hand.** See above; the run log lists them.
 - See §6 for the document types that are not handled yet.
 
 **Open assumptions (marked `UNVERIFIED:` in the code)**
@@ -166,12 +169,25 @@ studioPro
 - Which email fields are expressions, and whether an attachment is a bare variable name.
 - The format of REST operation references, and `resolve()` on elements that are not units (`ReferenceResolver.ts`).
 - Rule parameters are expected as parameter objects, like microflow parameters (`FlowUpdater.ts`).
-- Whether the workflow parameter can be renamed, and the `Module.Workflow.Param` format in workflow call mappings (`WorkflowInspector.ts`).
+- Whether the workflow parameter can be renamed (`WorkflowInspector.ts`).
 - Whether an export mapping's `parameterName` is referenced anywhere else (`MappingInspector.ts`).
+- Mappings reference a definition in a message definition collection as `Module.Collection.Definition` (`MessageDefinitionInspector.ts`, `MessageDefinitionUsage.ts`).
+- Consumed REST mapping trees hold qualified names in `entity`, `association`, `attribute`, `microflow` and `parameter` only; the allow-list relies on this (`updaterRegistry.ts`).
+- ML model mappings hold qualified names in `entity` (`Module.Entity`) and `attribute` (`Module.Entity.Attribute`), and saving a rewritten entity keeps the tensor mappings intact (`updaterRegistry.ts`).
+- A view entity source document has the same name as its view entity, and a view entity can be renamed through the API (`ViewEntitySourceInspector.ts`).
+- A view entity may point to its old-named source document for one save without a stale error (`EntityRenameStep.ts`).
+- View entity OQL holds only qualified names the reference rewrite can parse; double-quoted identifiers and comments are untested.
+- OData `EntitySet.entityType` refers to the entity, not to an exposed name, so it is never renamed as an exposed name (`PublishedServiceInspector.ts`).
+- Exposed names are unique per property within a published service; a rename onto a used value is skipped (`PublishedServiceInspector.ts`).
+- Published REST operation paths refer to parameters as `{Param}`, the same syntax as page URLs (`shared/urlPlaceholders.ts`).
+- Dataset queries and constraints use parameters as `$Name`, and parameter access lists hold the bare name (`DataSetInspector.ts`).
+- Callers map Java/JavaScript action parameters as `Module.Action.Param`; a bare name is not rewritten (`CodeActionInspector.ts`).
+- `messageDefinitions2` (standalone message definitions) exists at runtime; a listing failure stops the job.
+- What Studio Pro does with the `.java`/`.js` file when an action is renamed.
 
 **Machine-specific paths**
 - `appDir` in `build-extension.mjs` points to a Mendix app on this machine. If the folder doesn't exist, the build doesn't deploy.
-- `.vscode/launch.json` still points to `C:\Users\Thom\...`. It's worth reading both paths from an environment variable or a local config file.
+- `.vscode/launch.json` still points to `C:\Users\Thom\...` and to Studio Pro 11.12.2, while the API package targets 11.12.4. It's worth reading both paths from an environment variable or a local config file.
 
 ---
 
@@ -185,7 +201,7 @@ ToDo.md                    roadmap
 src/manifest.json          tells Studio Pro which JS is main and which is a UI entry point
 src/main.ts                registers the pane and the Extensions menu
 src/global.d.ts            lets TS import .html/.css/.svg as strings
-src/shared/design/         BGS-UtilityTools design system: tokens.css, bundle.css, theme, pane mount, DOM helpers, status
+src/shared/design/         BGS-UtilityTools design system: tokens.css, bundle.css, bgs-mark.svg, theme, pane mount, DOM helpers, status
 src/EntityNameChanger/
   main.ts                  pane entry point (wiring only)
   EntityNameChangerPane.ts pane controller
@@ -194,9 +210,10 @@ src/EntityNameChanger/
   validation.ts            request and name checks
   renameService.ts         builds and runs one rename job
   ui/                      pane.html, PaneView.ts (DOM), runLog.ts (report → run log)
-  framework/               RenameJob, RenamePlanner (batches), PrepareStep, EntityRenameStep,
+  framework/               RenameJob, RenamePlanner (batches), RenameContext, PrepareStep, EntityRenameStep,
                            NamingPolicy, QualifiedNameRenames, DocumentNameRegistry,
-                           DocumentRenamePlan, AssociationRenamePlan, RenameReport, UnitInfoCache, types
+                           DocumentRenamePlan, AssociationRenamePlan, RenameReport, MessageDefinitionUsage,
+                           UnitInfoCache, types
   updaters/
     updaterRegistry.ts     every updater per phase; the only place that touches app.model
     microflows/            FlowUpdater (microflows, nanoflows, rules), MicroflowHelper,
@@ -204,10 +221,12 @@ src/EntityNameChanger/
     pages/                 PageUpdater, PageHelper (pages, snippets)
     domainModels/          AssociationUpdater, associationRename, sharedNames
     references/            ReferenceUpdater (generic qualified-name rewrite)
-    documents/             DocumentUpdater with an inspector per type: workflows, mappings, JSON structures
+    documents/             DocumentUpdater with an inspector per type: workflows, mappings, JSON structures,
+                           message definitions, datasets, view entity sources, Java/JavaScript actions,
+                           published services
     refresh/               RefreshUpdater (extra save of pages and snippets)
-    shared/                elementWalker, qualifiedNameRewrite, variableRewrite, renameDocument
-    StubUpdater.ts         placeholder for document types not implemented yet
+    shared/                elementWalker, qualifiedNameRewrite, variableRewrite, urlPlaceholders, renameDocument
+    StubUpdater.ts         placeholder for document types not implemented yet (unused now)
 src/UnitTests/             mirrors src/; helpers/ holds fakes and model builders
 ```
 
@@ -221,19 +240,22 @@ The **Cause** column says why:
 - **API restriction**: the Extensibility API (0.11.4 / Studio Pro 11.12) gives no way to read or change it. All 53 microflow activity types in the API are handled; none is restricted.
 - **Not implemented**: the API exposes it, but the tool doesn't use it yet.
 - **By design**: deliberately left alone.
+- **Studio Pro behaviour**: Studio Pro itself undoes or blocks the change.
 
 | Document / element | Not handled today | Cause |
 |---|---|---|
 | Navigation (menu items, home pages, role-based home pages, login page) | References to renamed pages, microflows and nanoflows | **API restriction**: navigation is not in the API. The run log warns instead. |
-| Java action source code (`javasource/`) | Code using the old entity or proxy class names | **API restriction**: code is not part of the model API. It could be done through `app.files`, but that is risky. |
+| Java action source code (`javasource/`) | Code using the old entity, proxy class, action or parameter names | **API restriction**: code is not part of the model API. It could be done through `app.files`, but that is risky. The run log warns when an action changed. |
 | JavaScript action source code | Code using the old names | **API restriction**: same as Java. |
-| Message definitions | Names | Not implemented (stub updater) |
-| Document templates | Names and parameters | Not implemented (stub updater) |
-| Datasets | Names and parameters | Not implemented (stub updater) |
-| Java and JavaScript actions (model side) | Names, and entity types in parameters and return types (not in the reference pass) | Not implemented: `javaActions` and `javaScriptActions` are in the API |
-| Consumed REST and OData services | Entity references (not in the reference pass) | Not implemented: in the API |
-| Consumed REST and imported web services | References to renamed import/export mappings and JSON structures | Not implemented: not in the reference pass |
-| ML model mappings | Entity references (not in the reference pass) | Not implemented: `mlMappingDocuments` is in the API |
-| View entity source documents (OQL) | The entity name in OQL queries | Not implemented: `viewEntitySourceDocuments` is in the API. |
-| Published REST, OData and web services | Document names and exposed names (references inside are updated) | By design: exposed names are an external contract |
+| Report widgets | References to renamed datasets | **API restriction**: report widgets are not in the API. The run log warns instead. |
+| Connector actions (ConnectorKit) | References to renamed Java action parameters | Not implemented: not in the reference pass |
+| Message definitions | Exposed names | By design: exposed names are an external contract |
+| Import and export mappings of a changed message definition | Their mapping: it no longer matches the schema, and updating it in Studio Pro clears it | **Studio Pro behaviour**: no way around it. The run log lists them per message definition. |
+| Consumed REST and OData services | Names (references to the entity, associations, attributes and microflows are updated) | By design: names mirror the external API |
+| Imported web services | Nothing to update: they hold no reference to entities or app documents; mappings point to them | By design: names mirror the external API |
+| ML model mappings | Names (entity and attribute references are updated) | By design: names mirror the model file |
+| View entities using the renamed entity | Their names (their OQL is updated) | By design: other entities are never renamed |
+| Published REST, OData and web services | Exposed names unless opted in. Always kept: literal path text, namespaces and versions; with the opt-in, only `{Param}` placeholders of renamed REST operation parameters change in a path. Documents and references are updated. | By design: the published API is an external contract. The run log warns when exposed names were renamed. |
+| Document templates | Everything: names, parameters and references | By design: deprecated, and updating them failed in Studio Pro. Never loaded; the run log warns when the app has any. |
+| Layouts, menus, scheduled events, enumerations, constants, page templates, building blocks | Names (references in layouts, menus and scheduled events are updated) | By design: not derived from entity names, or templates only (`EXCLUDED_DOCUMENT_TYPES`) |
 | Marketplace modules and System | Everything | By design: Marketplace content is read-only |

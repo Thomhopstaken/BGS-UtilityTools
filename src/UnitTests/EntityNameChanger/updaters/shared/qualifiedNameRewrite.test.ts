@@ -1,8 +1,23 @@
 import { describe, expect, it } from "vitest";
 import {
+  referencesQualifiedName,
   rewriteQualifiedNames,
   rewriteQualifiedNamesInUnit,
 } from "../../../../EntityNameChanger/updaters/shared/qualifiedNameRewrite";
+
+describe("referencesQualifiedName", () => {
+  it.each([
+    ["FROM MyModule.Order AS o", true],
+    ["SELECT MyModule.Order.Total", true],
+    ["FROM MyModule.OrderLine", false],
+    ["o/MyModule.Order_Customer", false],
+    ["x = 'MyModule.Order'", false],
+    ["Other.MyModule.Order", false],
+    ["", false],
+  ])("%s -> %s", (value, expected) => {
+    expect(referencesQualifiedName(value, "MyModule.Order")).toBe(expected);
+  });
+});
 
 const OLD = "MyModule.Order";
 const NEW = "MyModule.Purchase";
@@ -120,5 +135,31 @@ describe("rewriteQualifiedNamesInUnit", () => {
     rewriteQualifiedNamesInUnit(unit, RENAMES);
     expect(rewriteQualifiedNamesInUnit(unit, RENAMES)).toBe(0);
     expect(unit.entity).toBe(NEW);
+  });
+});
+
+describe("rewriteQualifiedNamesInUnit with onlyProperties", () => {
+  it("rewrites only the listed properties, at any depth", () => {
+    const unit = {
+      $Type: "Rest$ConsumedRestService",
+      openApiFile: { $Type: "Rest$OpenApiFile", content: "MyModule.Order" },
+      operations: [
+        {
+          $Type: "Rest$RestOperation",
+          body: { $Type: "Rest$JsonBody", value: "MyModule.Order" },
+          root: { $Type: "ExportMappings$ExportObjectMappingElement", entity: "MyModule.Order", children: [] },
+        },
+      ],
+    };
+    expect(rewriteQualifiedNamesInUnit(unit, RENAMES, new Set(["entity"]))).toBe(1);
+    expect(unit.operations[0].root.entity).toBe("MyModule.Purchase");
+    expect(unit.openApiFile.content).toBe("MyModule.Order");
+    expect(unit.operations[0].body.value).toBe("MyModule.Order");
+  });
+
+  it("rewrites listed string arrays too", () => {
+    const unit = { $Type: "X$Y", parameter: ["MyModule.ACT_Order.Order"], other: ["MyModule.Order"] };
+    expect(rewriteQualifiedNamesInUnit(unit, RENAMES, new Set(["parameter"]))).toBe(1);
+    expect(unit).toEqual({ $Type: "X$Y", parameter: ["MyModule.ACT_Purchase.Purchase"], other: ["MyModule.Order"] });
   });
 });

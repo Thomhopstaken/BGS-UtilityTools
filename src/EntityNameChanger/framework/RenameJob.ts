@@ -36,8 +36,12 @@ export type RenameJobResult = {
 // API call; each step lists and loads its own units.
 // Order: prepare -> plan (read-only) -> rename entity -> rename declarations -> update references. Every document gets
 // its last save after all names it references exist, because Studio Pro checks a document only when it is saved.
-export async function runRenameJob(deps: RenameJobDeps, context: RenameContext): Promise<RenameJobResult> {
-  const report = new RenameReport();
+// report: pass one when updaters fill it directly (e.g. message definition usage); a fresh one otherwise.
+export async function runRenameJob(
+  deps: RenameJobDeps,
+  context: RenameContext,
+  report: RenameReport = new RenameReport(),
+): Promise<RenameJobResult> {
   const steps = buildSteps(deps, report, context, deps.batchSize ?? BATCH_SIZE, new UnitInfoCache());
   console.info(`starting rename job with ${steps.length} steps`);
   const dialog = await deps.runProgress(`Renaming ${context.oldQualifiedName} to ${context.newName}`, steps);

@@ -1,12 +1,12 @@
-import type { ProgressDialogResult } from "@mendix/extensions-api";
+import type { Primitives, ProgressDialogResult } from "@mendix/extensions-api";
 import { AssociationRenamePlan } from "./framework/AssociationRenamePlan";
 import { DocumentNameRegistry } from "./framework/DocumentNameRegistry";
 import { EntityRenameStep } from "./framework/EntityRenameStep";
 import { PrepareStep } from "./framework/PrepareStep";
 import { QualifiedNameRenames } from "./framework/QualifiedNameRenames";
-import { createRenameContext, type RenameContext } from "./framework/RenameContext";
+import { createRenameContext, isInScope, type RenameContext } from "./framework/RenameContext";
 import { runRenameJob } from "./framework/RenameJob";
-import type { RenameReport } from "./framework/RenameReport";
+import { RenameReport } from "./framework/RenameReport";
 import type { ProgressRunner } from "./framework/types";
 import { type AppModel, createUpdaters } from "./updaters/updaterRegistry";
 import type { EntityOption } from "./entityPicker";
@@ -15,6 +15,8 @@ import { findTakenEntityName } from "./validation";
 export type RenameRequest = {
   readonly entity: EntityOption;
   readonly newName: string;
+  // Also rename exposed names in published services; off when absent.
+  readonly renameExposedNames?: boolean;
 };
 
 export type RenameServiceDeps = {
@@ -30,6 +32,16 @@ export type RenameServiceDeps = {
 export type RenameRunResult =
   | { readonly kind: "rejected"; readonly message: string }
   | { readonly kind: "ran"; readonly dialog: ProgressDialogResult; readonly report: RenameReport; readonly context: RenameContext };
+
+// Units of one model API in the app's own modules; listed only, never loaded.
+export async function countInScope(
+  access: { getUnitsInfo(): Promise<readonly Readonly<Primitives.UnitInfo>[]> },
+  context: RenameContext,
+): Promise<number> {
+  const count = (await access.getUnitsInfo()).filter((info) => isInScope(info, context)).length;
+  console.debug(`units in scope: ${count}`);
+  return count;
+}
 
 // Wires the framework for one rename and runs it in the progress dialog. A quick name check first, so the
 // common mistake is reported without opening the dialog.
@@ -48,6 +60,7 @@ export async function runEntityRename(deps: RenameServiceDeps, request: RenameRe
     newName,
     excludedModules: deps.excludedModules,
     allEntityNames: deps.allEntityNames,
+    renameExposedNames: request.renameExposedNames ?? false,
   });
   const { model } = deps;
   const associationPlan = new AssociationRenamePlan();
@@ -57,13 +70,17 @@ export async function runEntityRename(deps: RenameServiceDeps, request: RenameRe
   const prepare = new PrepareStep({
     validate: () => entityStep.validate(),
     getModulesTree: () => model.projects.getModulesTree(),
+    countDocumentTemplates: () => countInScope(model.documentTemplates, context),
     documentNames,
   });
+  // Created here so the mapping planners can fill its message definition usage.
+  const jobReport = new RenameReport();
   const groups = createUpdaters(model, {
     context,
     documentNames,
     renames: QualifiedNameRenames.forEntity(context),
     associationPlan,
+    messageDefinitionUsage: jobReport.messageDefinitionUsage,
   });
   const started = Date.now();
   const { dialog, report } = await runRenameJob(
@@ -78,6 +95,7 @@ export async function runEntityRename(deps: RenameServiceDeps, request: RenameRe
       },
     },
     context,
+    jobReport,
   );
   console.info(`rename ran in ${Date.now() - started} ms: ${dialog.result}`);
   return { kind: "ran", dialog, report, context };

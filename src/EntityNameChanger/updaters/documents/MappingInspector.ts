@@ -1,4 +1,6 @@
 import type { ExportMappings, ImportMappings, Primitives } from "@mendix/extensions-api";
+import { qualifiedName } from "../../framework/DocumentRenamePlan";
+import type { MessageDefinitionUsage } from "../../framework/MessageDefinitionUsage";
 import type { NamingPolicy } from "../../framework/NamingPolicy";
 import { isEntityQname, type RenameContext } from "../../framework/RenameContext";
 import { entityOfDataType } from "../microflows/ReferenceCache";
@@ -14,14 +16,18 @@ export class MappingInspector implements DocumentInspector<MappingDocument> {
   private readonly naming: NamingPolicy;
   // Qualified names of JSON structures used by a mapping of the entity; shared with JsonStructureInspector.
   private readonly usedJsonStructures: Set<string>;
+  // Every mapping's message definition, entity or not; read for the run log.
+  private readonly messageDefinitionUsage: MessageDefinitionUsage;
 
-  constructor(context: RenameContext, naming: NamingPolicy, usedJsonStructures: Set<string>) {
+  constructor(context: RenameContext, naming: NamingPolicy, usedJsonStructures: Set<string>, messageDefinitionUsage: MessageDefinitionUsage) {
     this.context = context;
     this.naming = naming;
     this.usedJsonStructures = usedJsonStructures;
+    this.messageDefinitionUsage = messageDefinitionUsage;
   }
 
-  usesEntity(mapping: MappingDocument, _info?: Readonly<Primitives.UnitInfo>): boolean {
+  usesEntity(mapping: MappingDocument, info?: Readonly<Primitives.UnitInfo>): boolean {
+    this.recordMessageDefinition(mapping, info);
     let found = mapping.$Type === "ImportMappings$ImportMapping" && this.isEntity(entityOfDataType(mapping.parameterType));
     if (!found) {
       walkElements(mapping.rootMappingElements, (element) => {
@@ -63,6 +69,18 @@ export class MappingInspector implements DocumentInspector<MappingDocument> {
     console.debug(`applying parameter rename '${mapping.parameterName}' -> '${newName}'`);
     mapping.parameterName = newName;
     return 1;
+  }
+
+  private recordMessageDefinition(mapping: MappingDocument, info: Readonly<Primitives.UnitInfo> | undefined): void {
+    const mappingName = qualifiedName(info?.moduleName, mapping.name);
+    if (mappingName === undefined) {
+      return;
+    }
+    for (const definition of [mapping.messageDefinition, mapping.messageDefinition2]) {
+      if (typeof definition === "string" && definition.length > 0) {
+        this.messageDefinitionUsage.add(definition, mappingName);
+      }
+    }
   }
 
   private isEntity(qname: string | null | undefined): boolean {

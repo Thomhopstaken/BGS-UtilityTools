@@ -5,7 +5,7 @@ import type { EntityOption } from "../../EntityNameChanger/entityPicker";
 import { EntityNameChangerPane, type PaneData, type PaneDeps, type PaneViewPort } from "../../EntityNameChanger/EntityNameChangerPane";
 import { RenameReport } from "../../EntityNameChanger/framework/RenameReport";
 import type { RenameRunResult } from "../../EntityNameChanger/renameService";
-import type { RunLog } from "../../EntityNameChanger/ui/runLog";
+import type { RowTarget, RunLog } from "../../EntityNameChanger/ui/runLog";
 import type { PaneField } from "../../EntityNameChanger/validation";
 import { fakeContext } from "./helpers/fakes";
 
@@ -23,7 +23,7 @@ function data(names: Record<string, string[]>): PaneData {
 
 // Records what the controller asks the view to do; the request is set by the test.
 class FakeView implements PaneViewPort {
-  request = { moduleName: "", entityId: "", newName: "" };
+  request = { moduleName: "", entityId: "", newName: "", renameExposedNames: false };
   modules: { names: readonly string[]; selected?: string }[] = [];
   entities: { options: readonly EntityOption[] | null; selectedId?: string }[] = [];
   fieldErrors: { field: PaneField; message: string }[] = [];
@@ -82,16 +82,17 @@ function setup(rename: PaneDeps["rename"] = async () => ran("Success", true), lo
     return next;
   });
   const renameSpy = vi.fn(rename);
+  const openDocument = vi.fn(async (_target: RowTarget) => {});
   let tick = 0;
-  const pane = new EntityNameChangerPane(view, { loadData, rename: renameSpy, now: () => new Date(2026, 9, 9, 10, 0, tick++) });
-  return { view, pane, loadData, rename: renameSpy };
+  const pane = new EntityNameChangerPane(view, { loadData, rename: renameSpy, openDocument, now: () => new Date(2026, 9, 9, 10, 0, tick++) });
+  return { view, pane, loadData, rename: renameSpy, openDocument };
 }
 
 async function loadedWithRequest(newName: string, rename?: PaneDeps["rename"], loads?: PaneData[]) {
   const s = setup(rename, loads);
   await s.pane.load();
   s.pane.selectModule("MyModule");
-  s.view.request = { moduleName: "MyModule", entityId: "id-Order", newName };
+  s.view.request = { moduleName: "MyModule", entityId: "id-Order", newName, renameExposedNames: false };
   return s;
 }
 
@@ -105,7 +106,7 @@ describe("EntityNameChangerPane.load", () => {
 
   it("shows an error when loading fails", async () => {
     const view = new FakeView();
-    const pane = new EntityNameChangerPane(view, { loadData: () => Promise.reject(new Error("no model")), rename: vi.fn() });
+    const pane = new EntityNameChangerPane(view, { loadData: () => Promise.reject(new Error("no model")), rename: vi.fn(), openDocument: vi.fn() });
     await pane.load();
     expect(view.outcome).toEqual([{ tone: "error", text: "Could not load entities: no model" }]);
     expect(view.modules).toEqual([]);
@@ -135,7 +136,7 @@ describe("EntityNameChangerPane.submit", () => {
   ] as const)("marks the field for %j", async (request, field, message) => {
     const { view, pane, rename } = setup();
     await pane.load();
-    view.request = { ...request };
+    view.request = { ...request, renameExposedNames: false };
     await pane.submit();
     expect(view.fieldErrors).toEqual([{ field, message }]);
     expect(rename).not.toHaveBeenCalled();
@@ -146,7 +147,7 @@ describe("EntityNameChangerPane.submit", () => {
     const { view, pane, rename, loadData } = await loadedWithRequest("Purchase");
     await pane.submit();
     expect(rename).toHaveBeenCalledWith(
-      { entity: option("Order"), newName: "Purchase" },
+      { entity: option("Order"), newName: "Purchase", renameExposedNames: false },
       { excludedModules: new Set(["System"]), allEntityNames: ["Order", "Customer", "Invoice"], entityNamesInModule: ["Order", "Customer"] },
     );
     expect(view.busy).toEqual([true, false]);
@@ -155,6 +156,13 @@ describe("EntityNameChangerPane.submit", () => {
     expect(view.runLog?.meta).toBe("10:00:01 · 1.0 s");
     expect(view.nameCleared).toBe(1);
     expect(loadData).toHaveBeenCalledTimes(2);
+  });
+
+  it("passes the exposed names choice on", async () => {
+    const { view, pane, rename } = await loadedWithRequest("Purchase");
+    view.request = { ...view.request, renameExposedNames: true };
+    await pane.submit();
+    expect(rename.mock.calls[0][0]).toMatchObject({ newName: "Purchase", renameExposedNames: true });
   });
 
   it("shows the progress status while the rename runs", async () => {
@@ -167,12 +175,30 @@ describe("EntityNameChangerPane.submit", () => {
     expect(seen).toEqual([{ tone: "info", text: "Renaming MyModule.Order to MyModule.Purchase…" }]);
   });
 
-  it("reloads after a rename and keeps the module and entity selected", async () => {
+  it("reloads after a rename and clears the module and entity selection", async () => {
     const renamed = data({ MyModule: ["Customer", "Purchase"], Other: ["Invoice"] });
     const { view, pane } = await loadedWithRequest("Purchase", undefined, [data({ MyModule: ["Order", "Customer"], Other: ["Invoice"] }), renamed]);
     await pane.submit();
-    expect(view.modules.at(-1)).toEqual({ names: ["MyModule", "Other"], selected: "MyModule" });
-    expect(view.entities.at(-1)).toEqual({ options: renamed.byModule.get("MyModule"), selectedId: "id-Order" });
+    expect(view.modules.at(-1)).toEqual({ names: ["MyModule", "Other"], selected: undefined });
+    expect(view.entities.at(-1)).toEqual({ options: null, selectedId: undefined });
+    pane.selectModule("MyModule");
+    expect(view.entities.at(-1)?.options).toEqual(renamed.byModule.get("MyModule"));
+  });
+
+  it("clears the selection when the reload fails", async () => {
+    const { view, pane, loadData } = await loadedWithRequest("Purchase");
+    loadData.mockRejectedValueOnce("offline");
+    await pane.submit();
+    expect(view.modules.at(-1)).toEqual({ names: ["MyModule", "Other"], selected: undefined });
+    expect(view.entities.at(-1)).toEqual({ options: null, selectedId: undefined });
+  });
+
+  it("keeps the selection when the entity was not renamed", async () => {
+    const { view, pane } = await loadedWithRequest("Purchase", async () => ran("UserCancelled", false));
+    const modules = view.modules.length;
+    const entities = view.entities.length;
+    await pane.submit();
+    expect([view.modules.length, view.entities.length]).toEqual([modules, entities]);
   });
 
   it("does not reload when the entity was not renamed", async () => {
@@ -230,5 +256,21 @@ describe("EntityNameChangerPane.clearLog", () => {
     pane.clearLog();
     expect(view.outcome).toEqual([]);
     expect(view.runLog).toEqual({ log: null, meta: "" });
+  });
+});
+
+describe("EntityNameChangerPane.openDocument", () => {
+  it("passes the row target to Studio Pro", async () => {
+    const { view, pane, openDocument } = setup();
+    await pane.openDocument({ documentId: "dm-1", elementId: "entity-1" });
+    expect(openDocument).toHaveBeenCalledWith({ documentId: "dm-1", elementId: "entity-1" });
+    expect(view.outcome).toEqual([]);
+  });
+
+  it("shows an error when the document can't be opened", async () => {
+    const { view, pane, openDocument } = setup();
+    openDocument.mockRejectedValueOnce(new Error("not found"));
+    await pane.openDocument({ documentId: "gone" });
+    expect(view.outcome).toEqual([{ tone: "error", text: "Could not open the document: not found" }]);
   });
 });

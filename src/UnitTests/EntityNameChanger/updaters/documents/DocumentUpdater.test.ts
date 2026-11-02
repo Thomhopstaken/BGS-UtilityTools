@@ -6,11 +6,13 @@ import { NamingPolicy } from "../../../../EntityNameChanger/framework/NamingPoli
 import { QualifiedNameRenames } from "../../../../EntityNameChanger/framework/QualifiedNameRenames";
 import { UNCHANGED, type UpdaterMode } from "../../../../EntityNameChanger/framework/types";
 import {
+  applyNamedRenames,
   type DocumentInspector,
   DocumentUpdater,
   type DocumentUpdaterDeps,
   type LocalRenames,
   NO_LOCAL_RENAMES,
+  planNamedRenames,
 } from "../../../../EntityNameChanger/updaters/documents/DocumentUpdater";
 import { fakeContext, fakeUnitAccess, fakeUnitInfo } from "../../helpers/fakes";
 
@@ -117,5 +119,76 @@ describe("DocumentUpdater", () => {
     await planner.update(doc("WF_Order"), { $ID: "wf-1", $Type: "Workflows$Workflow", name: "WF_Order" } as never);
     expect(deps.renames.size).toBe(1);
     expect(deps.plan.get("wf-1").renamedTo).toBeNull();
+  });
+});
+
+describe("DocumentUpdater local skips", () => {
+  it("adds skipped local renames to the result", async () => {
+    const { planner, renamer } = setup(fakeInspector(true, { renames: new Map(), referencedByCallers: false, skipped: 2 }), ["WF_Order"]);
+    const unit = doc("WF_Order");
+    await planner.update(unit, info(unit.name));
+    expect(await renamer.update(unit, info("WF_Order"))).toMatchObject({ changed: true, renamedTo: "WF_Purchase", skippedRenames: 2 });
+  });
+});
+
+describe("planNamedRenames", () => {
+  const naming = new NamingPolicy("Order", "Purchase", ["OrderLine"]);
+  const named = (...names: string[]) => names.map((name) => ({ name }));
+
+  it("renames matching elements named after the entity", () => {
+    expect(planNamedRenames("test", named("Order", "OrderLine", "Other", "MyOrder"), (e) => e.name !== "MyOrder", naming, true)).toEqual({
+      renames: new Map([["Order", "Purchase"]]),
+      referencedByCallers: true,
+      skipped: 0,
+    });
+  });
+
+  it("skips a new name taken by a sibling and keeps the other renames", () => {
+    expect(planNamedRenames("test", named("Order", "Purchase"), () => true, naming, true)).toEqual({
+      renames: new Map(),
+      referencedByCallers: false,
+      skipped: 1,
+    });
+    expect(planNamedRenames("test", named("Order", "Purchase", "Order_A"), () => true, naming, false)).toEqual({
+      renames: new Map([["Order_A", "Purchase_A"]]),
+      referencedByCallers: false,
+      skipped: 1,
+    });
+  });
+
+  it("returns NO_LOCAL_RENAMES when nothing matches", () => {
+    expect(planNamedRenames("test", named("Other"), () => true, naming, true)).toBe(NO_LOCAL_RENAMES);
+    expect(planNamedRenames("test", named("Order"), () => false, naming, true)).toBe(NO_LOCAL_RENAMES);
+  });
+});
+
+describe("applyNamedRenames", () => {
+  it("renames listed elements and counts them", () => {
+    const elements = [{ name: "Order" }, { name: "Other" }];
+    expect(applyNamedRenames(elements, { renames: new Map([["Order", "Purchase"]]), referencedByCallers: false })).toBe(1);
+    expect(elements.map((e) => e.name)).toEqual(["Purchase", "Other"]);
+  });
+});
+
+describe("DocumentUpdater exposed names", () => {
+  it("reports exposed names renamed and skipped by the inspector", async () => {
+    const inspector = { ...fakeInspector(true), exposedNameCounts: vi.fn(() => ({ renamed: 3, skipped: 1 })) };
+    const { planner, renamer } = setup(inspector, ["WF_Order"]);
+    const unit = doc("WF_Order");
+    await planner.update(unit, info(unit.name));
+    expect(await renamer.update(unit, info("WF_Order"))).toEqual({
+      ...UNCHANGED,
+      changed: true,
+      renamedTo: "WF_Purchase",
+      skippedRenames: 1,
+      renamedExposedNames: 3,
+    });
+  });
+
+  it("leaves renamedExposedNames out for inspectors without exposed names", async () => {
+    const { planner, renamer } = setup(fakeInspector(true), ["WF_Order"]);
+    const unit = doc("WF_Order");
+    await planner.update(unit, info(unit.name));
+    expect(await renamer.update(unit, info("WF_Order"))).not.toHaveProperty("renamedExposedNames");
   });
 });

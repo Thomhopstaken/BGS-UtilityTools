@@ -1,7 +1,7 @@
 import type { Status } from "../shared/design/status";
 import { allEntityNames, type EntityOption } from "./entityPicker";
 import type { RenameRequest, RenameRunResult, RenameServiceDeps } from "./renameService";
-import { buildRunLog, runLogMeta, type RunLog } from "./ui/runLog";
+import { buildRunLog, type RowTarget, runLogMeta, type RunLog } from "./ui/runLog";
 import { type PaneField, validateRequest } from "./validation";
 
 // What the pane controller needs from the DOM; PaneView implements it, tests fake it.
@@ -9,7 +9,7 @@ export interface PaneViewPort {
   setModules(names: readonly string[], selected?: string): void;
   // null: no module selected, the entity picker is disabled.
   setEntities(options: readonly EntityOption[] | null, selectedId?: string): void;
-  readRequest(): { moduleName: string; entityId: string; newName: string };
+  readRequest(): { moduleName: string; entityId: string; newName: string; renameExposedNames: boolean };
   showFieldError(field: PaneField, message: string): void;
   clearFieldErrors(): void;
   showOutcome(status: Status): void;
@@ -31,6 +31,8 @@ export type RenameScope = Pick<RenameServiceDeps, "excludedModules" | "allEntity
 export type PaneDeps = {
   loadData(): Promise<PaneData>;
   rename(request: RenameRequest, scope: RenameScope): Promise<RenameRunResult>;
+  // Opens the document in Studio Pro's editor.
+  openDocument(target: RowTarget): Promise<void>;
   now?(): Date;
 };
 
@@ -87,7 +89,19 @@ export class EntityNameChangerPane {
       }
       return;
     }
-    await this.run({ entity, newName: input.newName }, options);
+    console.info(`pane: rename requested, exposed names ${input.renameExposedNames ? "renamed" : "kept"}`);
+    await this.run({ entity, newName: input.newName, renameExposedNames: input.renameExposedNames }, options);
+  }
+
+  // A run log row was clicked.
+  async openDocument(target: RowTarget): Promise<void> {
+    console.info(`pane: opening document ${target.documentId}${target.elementId === undefined ? "" : `, element ${target.elementId}`}`);
+    try {
+      await this.deps.openDocument(target);
+    } catch (error: unknown) {
+      console.info(`pane: opening document ${target.documentId} failed: ${error}`);
+      this.view.showOutcome({ tone: "error", text: `Could not open the document: ${errorMessage(error)}` });
+    }
   }
 
   clearLog(): void {
@@ -120,7 +134,7 @@ export class EntityNameChangerPane {
       this.view.showRunLog(log, runLogMeta(started, this.now()));
       if (result.report.entityRenamed) {
         this.view.clearNameInput();
-        await this.reload(entity.id);
+        await this.reload();
       }
     } catch (error: unknown) {
       console.info(`pane: rename failed: ${error}`);
@@ -131,20 +145,19 @@ export class EntityNameChangerPane {
     }
   }
 
-  // After a rename: fresh names, same module, the renamed entity still selected.
-  private async reload(entityId: string): Promise<void> {
+  // After a rename: fresh names, module and entity pickers back to empty. Also reset when reloading fails.
+  private async reload(): Promise<void> {
     try {
       this.data = await this.deps.loadData();
+      console.info(`pane: entities reloaded, ${this.data.byModule.size} modules`);
     } catch (error: unknown) {
       console.info(`pane: reload failed: ${error}`);
       this.view.showOutcome({ tone: "error", text: `Could not reload entities: ${errorMessage(error)}` });
-      return;
     }
-    const moduleName = this.moduleName;
-    this.view.setModules([...this.data.byModule.keys()], moduleName);
-    const options = this.data.byModule.get(moduleName);
-    this.view.setEntities(options ?? null, entityId);
-    console.info(`pane: entities reloaded, ${options?.length ?? 0} in ${moduleName}`);
+    this.moduleName = "";
+    this.view.setModules([...this.data.byModule.keys()]);
+    this.view.setEntities(null);
+    console.debug("pane: module and entity selection cleared");
   }
 
   private setBusy(busy: boolean): void {

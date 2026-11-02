@@ -26,6 +26,10 @@
           <input class="bgs-input" id="nameInput" type="text" placeholder="Enter new entity name" autocomplete="off" aria-describedby="nameError" />
           <span class="bgs-field__error" id="nameError" hidden></span>
         </div>
+        <div class="bgs-field">
+          <label class="bgs-check"><input type="checkbox" id="exposedNamesBox" aria-describedby="exposedNamesHelp" /><span>Also rename exposed names in published services</span></label>
+          <span class="bgs-help" id="exposedNamesHelp">Changes the published API: its clients must be updated.</span>
+        </div>
         <button type="submit" class="bgs-btn bgs-btn--primary bgs-btn--block" id="changeName">Change Name</button>
       </form>
       <div class="bgs-status-list" id="outcome" aria-live="polite"></div>
@@ -56,6 +60,7 @@
         <div class="bgs-groupbox__body">
           <ul class="bgs-list">
             <li>Commit your work first. A rename saves many documents at once, and version control is your clean way back.</li>
+            <li>If the entity is used in a message definition, the import and export mappings using it must be mapped again afterwards. Plan time for that.</li>
             <li>Fix errors in documents that use the entity, such as retrieve activities in microflows. If a document can't be checked during planning, the rename stops before anything is changed.</li>
             <li>Studio Pro is blocked while the rename runs; the progress dialog shows each step. In a large app this can take a few minutes.</li>
           </ul>
@@ -65,14 +70,17 @@
         <summary>What is renamed</summary>
         <div class="bgs-groupbox__body">
           <ul class="bgs-list">
-            <li>The entity</li>
+            <li>The entity, and its source document when it is a view entity</li>
             <li>Microflows, nanoflows, rules, pages and snippets that use the entity and have its name in their name, e.g. <span class="bgs-code">ACT_Order_Save</span></li>
             <li>Associations of the entity that have its name in their name, cross-module associations included</li>
             <li>Workflows with the entity as context, import and export mappings that map the entity, and JSON structures used by those mappings, when they have its name in their name</li>
-            <li>Page and snippet parameters of the entity's type that have its name in their name</li>
+            <li>Message definitions, datasets, Java and JavaScript actions, and published REST, OData and web services that use the entity, when they have its name in their name</li>
+            <li>Exposed names in published services that contain the entity name, only when "Also rename exposed names" is ticked. This includes REST operation parameters and their <span class="bgs-code">{Param}</span> placeholders in operation paths; other path text, namespaces and versions are kept</li>
+            <li>Page, snippet, dataset, Java action and JavaScript action parameters of the entity's type that have its name in their name</li>
+            <li>Message definitions of the entity inside a collection that have its name in their name; exposed names are kept</li>
             <li>The workflow parameter and the export mapping parameter, when of the entity's type and named after it</li>
             <li>The entity name in workflow texts: title, workflow name and description, task names and descriptions, and activity captions</li>
-            <li>References to everything renamed, in domain models, microflows, nanoflows, rules, pages, snippets, layouts, menus, workflows, mappings, message definitions, datasets, document templates, scheduled events and published services</li>
+            <li>References to everything renamed, in view entity queries (OQL), domain models, Java and JavaScript actions, consumed REST and OData services, ML model mappings, microflows, nanoflows, rules, pages, snippets, layouts, menus, workflows, mappings, message definitions, datasets, scheduled events and published services</li>
           </ul>
           <p>Matching is case-sensitive and replaces every occurrence of the entity name, so <span class="bgs-code">ACT_Orders_Get</span> becomes <span class="bgs-code">ACT_Purchases_Get</span>. Names of other entities are protected: renaming <span class="bgs-code">Order</span> leaves <span class="bgs-code">OrderLine</span> alone.</p>
           <p>A rename is skipped when the new name already exists; the run log counts these.</p>
@@ -98,12 +106,14 @@
         <summary>What you need to check yourself</summary>
         <div class="bgs-groupbox__body">
           <ul class="bgs-list">
-            <li>Names of message definitions, document templates and datasets: these are not renamed yet.</li>
-            <li>Java and JavaScript actions: their names, code, and entity types in their parameters and return types are not updated.</li>
-            <li>Consumed REST services and ML model mappings: references to the entity are not updated.</li>
-            <li>Consumed REST services and imported web services: references to renamed mappings and JSON structures are not updated.</li>
-            <li>View entities: the entity name in their OQL queries is not updated.</li>
-            <li>Published REST, OData and web services: the documents and their exposed names are kept; references inside them are updated.</li>
+            <li>Java and JavaScript action code in javasource and javascriptsource is not updated. The run log warns when an action changed.</li>
+            <li>Import and export mappings that use a changed message definition. They no longer match its schema, and updating them in Studio Pro clears them, so they must be mapped again by hand. The run log lists them per message definition.</li>
+            <li>Report widgets that use a renamed dataset are not updated. The run log warns when this applies.</li>
+            <li>Document templates are deprecated and not updated at all: no names, parameters or references. The run log warns when the app has any.</li>
+            <li>Connector actions: references to renamed Java action parameters are not updated.</li>
+            <li>ML model mappings keep their names, which mirror the model file.</li>
+            <li>Consumed REST and OData services and imported web services keep their names, which mirror the external API.</li>
+            <li>Clients of published services whose exposed names were renamed. The run log warns when this applies.</li>
             <li>Navigation: menu items, home pages and the login page that point to renamed documents. The run log warns when this applies.</li>
           </ul>
           <p>Marketplace modules and System are never changed.</p>

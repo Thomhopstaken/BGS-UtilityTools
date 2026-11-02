@@ -2,6 +2,7 @@ import type { JavaActions, MLMappings, Rest, Workflows } from "@mendix/extension
 import { describe, expect, it } from "vitest";
 import {
   emptyFlowReferences,
+  entityOfCodeActionType,
   entityOfDataType,
   javaActionSignature,
   mlOutputEntity,
@@ -81,6 +82,20 @@ describe("javaActionSignature", () => {
       { name: "Input", kind: "typed", typeParameter: "T" },
       { name: "Inputs", kind: "typed", typeParameter: "U" },
     ]);
+  });
+});
+
+describe("entityOfCodeActionType", () => {
+  it("returns the entity of a concrete entity type or a list of one", () => {
+    expect(entityOfCodeActionType(concrete("M.Order") as never)).toBe("M.Order");
+    expect(entityOfCodeActionType(list(concrete("M.Order")) as never)).toBe("M.Order");
+  });
+
+  it("returns null for type parameters, primitives and missing types", () => {
+    expect(entityOfCodeActionType(list(parameterized("T")) as never)).toBeNull();
+    expect(entityOfCodeActionType({ $Type: "CodeActions$StringType" } as never)).toBeNull();
+    expect(entityOfCodeActionType(null)).toBeNull();
+    expect(entityOfCodeActionType(undefined)).toBeNull();
   });
 });
 

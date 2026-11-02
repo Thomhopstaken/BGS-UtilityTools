@@ -67,6 +67,25 @@ describe("EntityRenameStep", () => {
     expect(await step(fakeDomainModels(null)).validate()).toBe("Domain model of MyModule not found.");
   });
 
+  it("run keeps a view entity's source document until it is renamed, rewriting other references", async () => {
+    const source = { $Type: "DomainModels$OqlViewEntitySource", sourceDocument: "MyModule.Order" };
+    const other = { $Type: "DomainModels$Entity", $ID: "entity-2", name: "Special", generalization: "MyModule.Order" };
+    const model = domainModel([{ $ID: "entity-1", name: "Order", source } as never, other]);
+    const report = new RenameReport();
+    expect(await step(fakeDomainModels(model)).run(report)).toBe(true);
+    expect(source.sourceDocument).toBe("MyModule.Order");
+    expect(other.generalization).toBe("MyModule.Purchase");
+    expect(report.updatedReferences).toBe(1);
+  });
+
+  it("run leaves a non-view entity's source alone", async () => {
+    const entity = { $ID: "entity-1", name: "Order", source: null };
+    const report = new RenameReport();
+    expect(await step(fakeDomainModels(domainModel([entity]))).run(report)).toBe(true);
+    expect(entity).toEqual({ $ID: "entity-1", name: "Purchase", source: null });
+    expect(report.updatedReferences).toBe(0);
+  });
+
   it("run renames and saves the entity", async () => {
     const entity = { $ID: "entity-1", name: "Order" };
     const model = domainModel([entity]);

@@ -21,6 +21,8 @@ export type UnitUpdateResult = {
   // Renames that were found but not applied, e.g. because the new name is taken.
   skippedRenames: number;
   renamedAssociations: number;
+  // Exposed names (published services) changed; the published API changes with them.
+  renamedExposedNames?: number;
 };
 
 export const UNCHANGED: Readonly<UnitUpdateResult> = Object.freeze({

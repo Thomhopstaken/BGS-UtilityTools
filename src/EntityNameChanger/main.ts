@@ -24,8 +24,14 @@ export const component: Mx.IComponent = {
           { ...scope, model, runProgress: (title, steps) => studioPro.ui.dialogs.showProgressDialog(title, steps) },
           request,
         ),
+      // UNVERIFIED: editDocument accepts the unit $ID from getUnitsInfo, and the entity $ID as element.
+      openDocument: (target) =>
+        target.elementId === undefined
+          ? studioPro.ui.editors.editDocument({ id: target.documentId })
+          : studioPro.ui.editors.editDocument({ id: target.documentId }, { id: target.elementId }),
     });
     view.onSubmit(() => void pane.submit());
+    view.onOpenDocument((target) => void pane.openDocument(target));
     view.onModuleChange((moduleName) => pane.selectModule(moduleName));
     view.onClearLog(() => pane.clearLog());
     await pane.load();

@@ -183,5 +183,9 @@ select.bgs-input { padding-right: var(--space-1); }
 .bgs-logrow--warning { --tone: var(--warning); }
 .bgs-logrow--error { --tone: var(--error); }
 .bgs-logrow__what { font-family: var(--font-mono); font-size: 12px; line-height: 16px; overflow-wrap: anywhere; min-width: 0; }
+/* Log row that opens its document: looks like the plain row, underlined on hover */
+.bgs-logrow__link { appearance: none; background: none; border: 0; padding: 0; margin: 0; text-align: left; color: var(--accent-text); cursor: pointer; justify-self: start; }
+.bgs-logrow__link:hover { text-decoration: underline; }
+.bgs-logrow__link:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 1px; }
 .bgs-logrow__note { grid-column: 2; font-size: 11px; line-height: 16px; color: var(--ink-muted); }
 .bgs-logrow--error .bgs-logrow__note { color: var(--error); }

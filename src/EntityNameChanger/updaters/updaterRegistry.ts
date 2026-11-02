@@ -1,6 +1,7 @@
 import type { DomainModels, Primitives, StudioProApi } from "@mendix/extensions-api";
 import type { AssociationRenamePlan } from "../framework/AssociationRenamePlan";
 import type { DocumentNameRegistry } from "../framework/DocumentNameRegistry";
+import type { MessageDefinitionUsage } from "../framework/MessageDefinitionUsage";
 import { DocumentRenamePlan } from "../framework/DocumentRenamePlan";
 import { NamingPolicy } from "../framework/NamingPolicy";
 import type { QualifiedNameRenames } from "../framework/QualifiedNameRenames";
@@ -9,9 +10,14 @@ import type { UnitAccess, UnitUpdater, UpdaterMode } from "../framework/types";
 import { FlowUpdater, type FlowUnitType, type FlowUpdaterDeps } from "./microflows/FlowUpdater";
 import { MicroflowHelper } from "./microflows/MicroflowHelper";
 import { AssociationUpdater, type AssociationUpdaterDeps } from "./domainModels/AssociationUpdater";
+import { CodeActionInspector } from "./documents/CodeActionInspector";
+import { DataSetInspector } from "./documents/DataSetInspector";
 import { type DocumentInspector, DocumentUpdater, type DocumentUpdaterDeps } from "./documents/DocumentUpdater";
 import { JsonStructureInspector } from "./documents/JsonStructureInspector";
 import { MappingInspector } from "./documents/MappingInspector";
+import { MessageDefinitionInspector } from "./documents/MessageDefinitionInspector";
+import { PublishedServiceInspector } from "./documents/PublishedServiceInspector";
+import { ViewEntitySourceInspector } from "./documents/ViewEntitySourceInspector";
 import { WorkflowInspector } from "./documents/WorkflowInspector";
 import { ReferenceCache } from "./microflows/ReferenceCache";
 import { ReferenceResolver } from "./microflows/ReferenceResolver";
@@ -19,7 +25,6 @@ import { PageHelper } from "./pages/PageHelper";
 import { PageUpdater, type PageUpdaterDeps } from "./pages/PageUpdater";
 import { ReferenceUpdater } from "./references/ReferenceUpdater";
 import { RefreshUpdater } from "./refresh/RefreshUpdater";
-import { createStubUpdater } from "./StubUpdater";
 
 export type AppModel = StudioProApi["app"]["model"];
 
@@ -30,22 +35,67 @@ export type UpdaterDeps = {
   renames: QualifiedNameRenames;
   // Filled by the association planner; read by the association renamer and the entity step.
   associationPlan: AssociationRenamePlan;
+  // Filled by the mapping planners; read for the run log.
+  messageDefinitionUsage: MessageDefinitionUsage;
 };
 
 // Document types that are never renamed, with the reason. Their references are still updated where listed
 // in REFERENCE_DOCUMENT_TYPES.
 export const EXCLUDED_DOCUMENT_TYPES: readonly { label: string; reason: string }[] = [
-  { label: "Published REST/OData/web services", reason: "exposed names are an external contract" },
+  { label: "Consumed REST/OData services", reason: "names mirror an external API" },
+  // Not in the reference pass either: no entity or app document references; mappings point to them, not back.
+  { label: "Imported web services", reason: "names mirror an external API" },
   { label: "Layouts, menus, scheduled events", reason: "not derived from entity names" },
   { label: "Page templates, building blocks", reason: "templates only, not checked by Studio Pro" },
   { label: "Enumerations, constants", reason: "not derived from entity names" },
+  // Entity and attribute references are updated.
+  { label: "ML model mappings", reason: "name mirrors the model file" },
+  // Not loaded at all, references included; the run log warns when the app has any.
+  { label: "Document templates", reason: "deprecated, and updating them failed" },
 ];
 
 // Document types whose references to the renamed entity, documents and parameters are rewritten in the last
-// phase, in this order. api is the app.model property. Domain models first: saving one seems to make Studio Pro
-// re-check its module's documents against stale flow parameters, so flows and pages must be saved after it.
-export const REFERENCE_DOCUMENT_TYPES: readonly { documents: string; unitType: string; api: keyof AppModel }[] = [
+// phase, in this order. api is the app.model property. View entity queries (OQL) first, so view entities are saved
+// after their query is valid. Then domain models: saving one seems to make Studio Pro re-check its module's documents
+// against stale flow parameters, so flows and pages must be saved after it.
+// Java and JavaScript actions, consumed services and ML model mappings next, so their callers are saved after the types
+// they provide are fixed. onlyProperties: the rest of the document mirrors an external API (OpenAPI, OData metadata)
+// or the model file (tensor names, metadata) and is left alone.
+export const REFERENCE_DOCUMENT_TYPES: readonly {
+  documents: string;
+  unitType: string;
+  api: keyof AppModel;
+  onlyProperties?: ReadonlySet<string>;
+}[] = [
+  {
+    documents: "view entity source documents",
+    unitType: "DomainModels$ViewEntitySourceDocument",
+    api: "viewEntitySourceDocuments",
+  },
   { documents: "domain models", unitType: "DomainModels$DomainModel", api: "domainModels" },
+  { documents: "Java actions", unitType: "JavaActions$JavaAction", api: "javaActions" },
+  { documents: "JavaScript actions", unitType: "JavaScriptActions$JavaScriptAction", api: "javaScriptActions" },
+  {
+    documents: "consumed REST services",
+    unitType: "Rest$ConsumedRestService",
+    api: "consumedRestServices",
+    // Mapping trees (entity, association, attribute, mapping microflow and its parameters) and parameter data types.
+    onlyProperties: new Set(["entity", "association", "attribute", "microflow", "parameter"]),
+  },
+  {
+    documents: "consumed OData services",
+    unitType: "Rest$ConsumedODataService",
+    api: "consumedODataServices",
+    onlyProperties: new Set(["configurationEntityMicroflow", "errorHandlingMicroflow", "headerListMicroflow"]),
+  },
+  {
+    documents: "ML model mappings",
+    unitType: "MLMappings$MLMappingDocument",
+    api: "mlMappingDocuments",
+    // Input and output entity, and the attribute per tensor.
+    // UNVERIFIED: both hold qualified names (Module.Entity, Module.Entity.Attribute).
+    onlyProperties: new Set(["entity", "attribute"]),
+  },
   { documents: "microflows", unitType: "Microflows$Microflow", api: "microflows" },
   { documents: "nanoflows", unitType: "Microflows$Nanoflow", api: "nanoflows" },
   { documents: "rules", unitType: "Microflows$Rule", api: "rules" },
@@ -61,8 +111,12 @@ export const REFERENCE_DOCUMENT_TYPES: readonly { documents: string; unitType: s
     unitType: "MessageDefinitions$MessageDefinitionCollection",
     api: "messageDefinitions",
   },
+  {
+    documents: "message definition documents",
+    unitType: "MessageDefinitions$MessageDefinition2",
+    api: "messageDefinitions2",
+  },
   { documents: "datasets", unitType: "DataSets$DataSet", api: "dataSets" },
-  { documents: "document templates", unitType: "DocumentTemplates$DocumentTemplate", api: "documentTemplates" },
   { documents: "scheduled events", unitType: "ScheduledEvents$ScheduledEvent", api: "scheduledEvents" },
   { documents: "published REST services", unitType: "Rest$PublishedRestService", api: "publishedRestServices" },
   {
@@ -77,7 +131,16 @@ type DocumentType =
   | "Workflows$Workflow"
   | "ImportMappings$ImportMapping"
   | "ExportMappings$ExportMapping"
-  | "JsonStructures$JsonStructure";
+  | "JsonStructures$JsonStructure"
+  | "MessageDefinitions$MessageDefinitionCollection"
+  | "MessageDefinitions$MessageDefinition2"
+  | "DataSets$DataSet"
+  | "DomainModels$ViewEntitySourceDocument"
+  | "JavaActions$JavaAction"
+  | "JavaScriptActions$JavaScriptAction"
+  | "Rest$PublishedRestService"
+  | "ODataPublish$PublishedODataService2"
+  | "WebServices$PublishedWebService";
 
 export type UpdaterGroups = {
   // Read-only: decide document renames and record every renamed qualified name; the only phase that resolves.
@@ -132,7 +195,10 @@ export function createUpdaters(model: AppModel, deps: UpdaterDeps): UpdaterGroup
   const documentDeps: DocumentUpdaterDeps = { naming, documentNames, renames, plan };
   // Filled by the mapping planners, read by the JSON structure planner after them.
   const usedJsonStructures = new Set<string>();
-  const mappingInspector = new MappingInspector(context, naming, usedJsonStructures);
+  const mappingInspector = new MappingInspector(context, naming, usedJsonStructures, deps.messageDefinitionUsage);
+  const messageDefinitionInspector = new MessageDefinitionInspector(context, naming, deps.messageDefinitionUsage);
+  const codeActionInspector = new CodeActionInspector(context, naming);
+  const publishedServiceInspector = new PublishedServiceInspector(context, naming, renames);
   const documentTypes: Record<DocumentType, { kind: string; label: string; access: unknown; inspector: DocumentInspector<never> }> = {
     Workflows$Workflow: {
       kind: "workflow",
@@ -157,6 +223,60 @@ export function createUpdaters(model: AppModel, deps: UpdaterDeps): UpdaterGroup
       label: "JSON structures",
       access: model.jsonStructures,
       inspector: new JsonStructureInspector(usedJsonStructures) as unknown as DocumentInspector<never>,
+    },
+    MessageDefinitions$MessageDefinitionCollection: {
+      kind: "message definition",
+      label: "Message definitions",
+      access: model.messageDefinitions,
+      inspector: messageDefinitionInspector as unknown as DocumentInspector<never>,
+    },
+    MessageDefinitions$MessageDefinition2: {
+      kind: "message definition document",
+      label: "Message definition documents",
+      access: model.messageDefinitions2,
+      inspector: messageDefinitionInspector as unknown as DocumentInspector<never>,
+    },
+    DataSets$DataSet: {
+      kind: "dataset",
+      label: "Datasets",
+      access: model.dataSets,
+      inspector: new DataSetInspector(context, naming) as unknown as DocumentInspector<never>,
+    },
+    DomainModels$ViewEntitySourceDocument: {
+      kind: "view entity source document",
+      label: "View entity source documents",
+      access: model.viewEntitySourceDocuments,
+      inspector: new ViewEntitySourceInspector(context) as unknown as DocumentInspector<never>,
+    },
+    JavaActions$JavaAction: {
+      kind: "Java action",
+      label: "Java actions",
+      access: model.javaActions,
+      inspector: codeActionInspector as unknown as DocumentInspector<never>,
+    },
+    JavaScriptActions$JavaScriptAction: {
+      kind: "JavaScript action",
+      label: "JavaScript actions",
+      access: model.javaScriptActions,
+      inspector: codeActionInspector as unknown as DocumentInspector<never>,
+    },
+    Rest$PublishedRestService: {
+      kind: "published REST service",
+      label: "Published REST services",
+      access: model.publishedRestServices,
+      inspector: publishedServiceInspector as unknown as DocumentInspector<never>,
+    },
+    ODataPublish$PublishedODataService2: {
+      kind: "published OData service",
+      label: "Published OData services",
+      access: model.publishedODataServices2,
+      inspector: publishedServiceInspector as unknown as DocumentInspector<never>,
+    },
+    WebServices$PublishedWebService: {
+      kind: "published web service",
+      label: "Published web services",
+      access: model.publishedWebServices,
+      inspector: publishedServiceInspector as unknown as DocumentInspector<never>,
     },
   };
   const documents = (mode: UpdaterMode, unitType: DocumentType): UnitUpdater => {
@@ -234,27 +354,18 @@ export function createUpdaters(model: AppModel, deps: UpdaterDeps): UpdaterGroup
     documents("plan", "ExportMappings$ExportMapping"),
     // After the mappings: a JSON structure is renamed only when an entity mapping uses it.
     documents("plan", "JsonStructures$JsonStructure"),
-    createStubUpdater(
-      "Message definitions",
-      "MessageDefinitions$MessageDefinitionCollection",
-      model.messageDefinitions,
-      "Renaming message definitions",
-    ),
-    // Name only, off by default when built: renaming also renames the Java class file.
-    createStubUpdater("Java actions", "JavaActions$JavaAction", model.javaActions, "Renaming Java actions"),
-    createStubUpdater(
-      "JavaScript actions",
-      "JavaScriptActions$JavaScriptAction",
-      model.javaScriptActions,
-      "Renaming JavaScript actions",
-    ),
-    createStubUpdater(
-      "Document templates",
-      "DocumentTemplates$DocumentTemplate",
-      model.documentTemplates,
-      "Renaming document templates and their parameters",
-    ),
-    createStubUpdater("Datasets", "DataSets$DataSet", model.dataSets, "Renaming datasets and their parameters"),
+    documents("plan", "MessageDefinitions$MessageDefinitionCollection"),
+    documents("plan", "MessageDefinitions$MessageDefinition2"),
+    documents("plan", "DataSets$DataSet"),
+    // Only the renamed view entity's own source; every query is rewritten by the reference pass.
+    documents("plan", "DomainModels$ViewEntitySourceDocument"),
+    // Renaming also renames the action's code file; the run log warns to check the code.
+    documents("plan", "JavaActions$JavaAction"),
+    documents("plan", "JavaScriptActions$JavaScriptAction"),
+    // After the flows and mappings: a published service uses the entity when it references a renamed document.
+    documents("plan", "Rest$PublishedRestService"),
+    documents("plan", "ODataPublish$PublishedODataService2"),
+    documents("plan", "WebServices$PublishedWebService"),
     // Last: needs every planned document rename, for names shared by a document and an association.
     new AssociationUpdater("plan", domainModels, associationDeps) as unknown as UnitUpdater,
   ];
@@ -271,12 +382,21 @@ export function createUpdaters(model: AppModel, deps: UpdaterDeps): UpdaterGroup
     documents("rename", "ImportMappings$ImportMapping"),
     documents("rename", "ExportMappings$ExportMapping"),
     documents("rename", "JsonStructures$JsonStructure"),
+    documents("rename", "MessageDefinitions$MessageDefinitionCollection"),
+    documents("rename", "MessageDefinitions$MessageDefinition2"),
+    documents("rename", "DataSets$DataSet"),
+    documents("rename", "DomainModels$ViewEntitySourceDocument"),
+    documents("rename", "JavaActions$JavaAction"),
+    documents("rename", "JavaScriptActions$JavaScriptAction"),
+    documents("rename", "Rest$PublishedRestService"),
+    documents("rename", "ODataPublish$PublishedODataService2"),
+    documents("rename", "WebServices$PublishedWebService"),
   ];
 
   const referenceUpdaters: UnitUpdater[] = REFERENCE_DOCUMENT_TYPES.map(
     (type) =>
       new ReferenceUpdater(
-        { documents: type.documents, unitType: type.unitType },
+        { documents: type.documents, unitType: type.unitType, onlyProperties: type.onlyProperties },
         model[type.api] as unknown as UnitAccess<Primitives.UnitBase>,
         renames,
       ),

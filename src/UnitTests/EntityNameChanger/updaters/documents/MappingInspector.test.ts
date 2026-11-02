@@ -1,19 +1,42 @@
 import { describe, expect, it } from "vitest";
+import { MessageDefinitionUsage } from "../../../../EntityNameChanger/framework/MessageDefinitionUsage";
 import { NamingPolicy } from "../../../../EntityNameChanger/framework/NamingPolicy";
 import { NO_LOCAL_RENAMES } from "../../../../EntityNameChanger/updaters/documents/DocumentUpdater";
 import { MappingInspector } from "../../../../EntityNameChanger/updaters/documents/MappingInspector";
 import { exportMapping, importMapping, objectElement, valueElement } from "../../helpers/documentBuilders";
 import { objectType } from "../../helpers/microflowBuilders";
-import { fakeContext } from "../../helpers/fakes";
+import { fakeContext, fakeUnitInfo } from "../../helpers/fakes";
 
 const context = fakeContext({ allEntityNames: ["Order", "OrderLine", "Customer"] });
 const QNAME = "MyModule.Order";
 
 function setup() {
   const used = new Set<string>();
-  const inspector = new MappingInspector(context, new NamingPolicy(context.oldName, context.newName, context.protectedNames), used);
-  return { inspector, used };
+  const usage = new MessageDefinitionUsage();
+  const inspector = new MappingInspector(context, new NamingPolicy(context.oldName, context.newName, context.protectedNames), used, usage);
+  return { inspector, used, usage };
 }
+
+describe("MappingInspector message definition usage", () => {
+  it("records the message definitions of every mapping, entity or not", () => {
+    const { inspector, usage } = setup();
+    const withCollection = { ...importMapping({ name: "IMM_Customer" }), messageDefinition: "MyModule.MD.Customer", messageDefinition2: null };
+    const withDocument = { ...exportMapping({ name: "EMM_Order", roots: [objectElement(QNAME)] }), messageDefinition: null, messageDefinition2: "MyModule.MD_Order" };
+    inspector.usesEntity(withCollection as never, fakeUnitInfo("i1", "ImportMappings$ImportMapping", "MyModule", "IMM_Customer"));
+    inspector.usesEntity(withDocument as never, fakeUnitInfo("e1", "ExportMappings$ExportMapping", "Other", "EMM_Order"));
+    usage.addEntityDefinition("MyModule.MD.Customer");
+    usage.addEntityDefinition("MyModule.MD_Order");
+    expect(usage.mappingsOf("MyModule.MD")).toEqual(["MyModule.IMM_Customer"]);
+    expect(usage.mappingsOf("MyModule.MD_Order")).toEqual(["Other.EMM_Order"]);
+  });
+
+  it("records nothing without unit info or message definition", () => {
+    const { inspector, usage } = setup();
+    inspector.usesEntity({ ...importMapping(), messageDefinition: "MyModule.MD.Customer" } as never);
+    inspector.usesEntity({ ...importMapping(), messageDefinition: "" } as never, fakeUnitInfo("i1", "ImportMappings$ImportMapping"));
+    expect(usage.mappingsOf("MyModule.MD")).toEqual([]);
+  });
+});
 
 describe("MappingInspector.usesEntity", () => {
   it("finds the entity in a root or nested object element", () => {

@@ -22,7 +22,7 @@ describe("RenameReport", () => {
     expect(report.changedUnits).toBe(1);
     expect(report.skippedRenames).toBe(3);
     expect(report.changed).toEqual([
-      { label: "Microflows", unitId: "u1", name: "ACT_Order", qualifiedName: "MyModule.ACT_Order", result: changed({ renamedTo: "ACT_Purchase", skippedRenames: 1 }) },
+      { label: "Microflows", unitId: "u1", unitType: "Microflows$Microflow", name: "ACT_Order", qualifiedName: "MyModule.ACT_Order", result: changed({ renamedTo: "ACT_Purchase", skippedRenames: 1 }) },
     ]);
   });
 
@@ -108,6 +108,32 @@ describe("RenameReport", () => {
     expect(report.navigationWarnings()).toEqual([]);
   });
 
+  describe("code actions and datasets to check", () => {
+    const java = fakeUnitInfo("j1", "JavaActions$JavaAction", "MyModule", "JA_Order");
+    const javaScript = fakeUnitInfo("j2", "JavaScriptActions$JavaScriptAction", "MyModule", "JS_Order");
+    const dataSet = fakeUnitInfo("d1", "DataSets$DataSet", "MyModule", "DS_Order");
+
+    it("lists each changed Java and JavaScript action once", () => {
+      const report = new RenameReport();
+      report.addResult("Java actions", java, changed({ renamedTo: "JA_Purchase" }));
+      report.addResult("References in Java actions", java, changed({ renamedVariables: 0, updatedReferences: 1 }));
+      report.addResult("References in JavaScript actions", javaScript, changed({ renamedVariables: 0, updatedReferences: 1 }));
+      report.addResult("Java actions", fakeUnitInfo("j3", "JavaActions$JavaAction", "MyModule", "JA_Other"), { ...UNCHANGED });
+      report.addResult("Microflows", info, changed());
+      expect(report.changedCodeActions()).toEqual(["MyModule.JA_Order", "MyModule.JS_Order"]);
+    });
+
+    it("lists renamed datasets only", () => {
+      const report = new RenameReport();
+      report.addResult("Datasets", dataSet, changed({ renamedTo: "DS_Purchase" }));
+      report.addResult("Datasets", fakeUnitInfo("d2", "DataSets$DataSet", "MyModule", "DS_Keep"), changed());
+      report.addResult("Microflows", info, changed({ renamedTo: "ACT_Purchase" }));
+      expect(report.renamedDataSets()).toEqual([
+        { unitId: "d1", unitType: "DataSets$DataSet", oldQualifiedName: "MyModule.DS_Order", newQualifiedName: "MyModule.DS_Purchase" },
+      ]);
+    });
+  });
+
   describe("navigation warnings", () => {
     const nanoflow = fakeUnitInfo("u5", "Microflows$Nanoflow", "MyModule", "NAV_Order");
     const snippet = fakeUnitInfo("u6", "Pages$Snippet", "MyModule", "Order_Snippet");
@@ -124,7 +150,7 @@ describe("RenameReport", () => {
       const report = new RenameReport();
       report.addResult("Microflows", info, changed({ renamedTo: "ACT_Purchase" }));
       expect(report.renamedDocuments).toEqual([
-        { unitType: "Microflows$Microflow", oldQualifiedName: "MyModule.ACT_Order", newQualifiedName: "MyModule.ACT_Purchase" },
+        { unitId: "u1", unitType: "Microflows$Microflow", oldQualifiedName: "MyModule.ACT_Order", newQualifiedName: "MyModule.ACT_Purchase" },
       ]);
     });
 
@@ -156,7 +182,7 @@ describe("RenameReport", () => {
       report.addResult("Nanoflows", nanoflow, changed({ renamedTo: "NAV_Purchase" }));
       report.addResult("Snippets", snippet, changed({ renamedTo: "Purchase_Snippet" }));
       expect(report.navigationDocuments()).toEqual([
-        { unitType: "Microflows$Nanoflow", oldQualifiedName: "MyModule.NAV_Order", newQualifiedName: "MyModule.NAV_Purchase" },
+        { unitId: "u5", unitType: "Microflows$Nanoflow", oldQualifiedName: "MyModule.NAV_Order", newQualifiedName: "MyModule.NAV_Purchase" },
       ]);
     });
 
@@ -171,5 +197,37 @@ describe("RenameReport", () => {
       report.addResult("Pages", { $ID: "u7", $Type: "Pages$Page" } as never, changed({ renamedTo: "Purchase_Edit" }));
       expect(report.navigationWarnings()).toEqual([]);
     });
+  });
+});
+
+describe("RenameReport.changedApis", () => {
+  it("lists each published service with renamed exposed names once", () => {
+    const report = new RenameReport();
+    const service = fakeUnitInfo("s1", "ODataPublish$PublishedODataService2", "MyModule", "POS_Order");
+    report.addResult("Published OData services", service, changed({ renamedVariables: 0, renamedExposedNames: 2 }));
+    report.addResult("References in published OData services", service, changed({ renamedVariables: 0, updatedReferences: 1 }));
+    report.addResult("Published REST services", fakeUnitInfo("s2", "Rest$PublishedRestService", "MyModule", "PRS_Order"), changed({ renamedExposedNames: 0 }));
+    expect(report.changedApis()).toEqual(["MyModule.POS_Order"]);
+  });
+});
+
+describe("RenameReport.changedMappedMessageDefinitions", () => {
+  it("lists each changed message definition with the mappings of its definitions that use the entity", () => {
+    const report = new RenameReport();
+    report.messageDefinitionUsage.add("MyModule.MD_Messages.Order", "MyModule.IMM_Order");
+    report.messageDefinitionUsage.add("MyModule.MD_Messages.Customer", "MyModule.IMM_Customer");
+    report.messageDefinitionUsage.add("MyModule.MD_Order", "MyModule.EMM_Order");
+    report.messageDefinitionUsage.addEntityDefinition("MyModule.MD_Messages.Order");
+    report.messageDefinitionUsage.addEntityDefinition("MyModule.MD_Order");
+    const collection = fakeUnitInfo("m1", "MessageDefinitions$MessageDefinitionCollection", "MyModule", "MD_Messages");
+    report.addResult("Message definitions", collection, changed());
+    report.addResult("References in message definitions", collection, changed({ renamedVariables: 0, updatedReferences: 1 }));
+    report.addResult("References in message definition documents", fakeUnitInfo("m2", "MessageDefinitions$MessageDefinition2", "MyModule", "MD_Order"), changed({ updatedReferences: 1 }));
+    report.addResult("Message definitions", fakeUnitInfo("m3", "MessageDefinitions$MessageDefinitionCollection", "MyModule", "MD_Unused"), changed());
+    report.addResult("Import mappings", fakeUnitInfo("i1", "ImportMappings$ImportMapping", "MyModule", "MD_Order"), changed());
+    expect(report.changedMappedMessageDefinitions()).toEqual([
+      { unitId: "m1", qualifiedName: "MyModule.MD_Messages", mappings: ["MyModule.IMM_Order"] },
+      { unitId: "m2", qualifiedName: "MyModule.MD_Order", mappings: ["MyModule.EMM_Order"] },
+    ]);
   });
 });

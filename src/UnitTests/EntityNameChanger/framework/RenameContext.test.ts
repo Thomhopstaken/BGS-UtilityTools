@@ -10,6 +10,11 @@ describe("createRenameContext", () => {
     expect(context.protectedNames).toEqual(["OrderLine"]);
     expect(context.newName).toBe("Purchase");
   });
+
+  it("keeps exposed names unless opted in", () => {
+    expect(fakeContext().renameExposedNames).toBe(false);
+    expect(fakeContext({ renameExposedNames: true }).renameExposedNames).toBe(true);
+  });
 });
 
 describe("isEntityQname", () => {
