@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isElement, walkElements } from "../../../../shared/rename/rewrite/elementWalker";
+import { isElement, walkElements, walkElementsWithPath } from "../../../../shared/rename/rewrite/elementWalker";
 
 function visitedTypes(root: object): string[] {
   const types: string[] = [];
@@ -53,5 +53,50 @@ describe("walkElements", () => {
       }
     });
     expect(root.child.expression).toBe("$Purchase");
+  });
+});
+
+describe("walkElementsWithPath", () => {
+  // "type@key[index] < parent types", one entry per visit.
+  function visits(root: object): string[] {
+    const seen: string[] = [];
+    walkElementsWithPath(root, (place, ancestors) => {
+      const at = place.index === undefined ? place.key : `${place.key}[${place.index}]`;
+      seen.push(`${place.element.$Type}@${at} < ${ancestors.map((a) => a.element.$Type).join(",")}`);
+    });
+    return seen;
+  }
+
+  it("passes each element's property, array position and ancestors, root first", () => {
+    const root = {
+      $Type: "Page",
+      rows: [{ $Type: "Row", columns: [{ $Type: "Column" }, { $Type: "Column", widgets: [{ $Type: "Container" }] }] }],
+      appearance: { $Type: "Appearance" },
+    };
+    expect(visits(root)).toEqual([
+      "Page@ < ",
+      "Row@rows[0] < Page",
+      "Column@columns[0] < Page,Row",
+      "Column@columns[1] < Page,Row",
+      "Container@widgets[0] < Page,Row,Column",
+      "Appearance@appearance < Page",
+    ]);
+  });
+
+  it("names the property of the nearest object through plain objects without $Type", () => {
+    expect(visits({ $Type: "A", plain: { inner: { $Type: "B" } } })).toEqual(["A@ < ", "B@inner < A"]);
+  });
+
+  it("skips $-prefixed keys and visits shared objects once", () => {
+    const shared = { $Type: "B" };
+    expect(visits({ $Type: "A", $Container: { $Type: "Parent" }, first: shared, second: shared })).toEqual(["A@ < ", "B@first < A"]);
+  });
+
+  it("reuses the ancestors array, so a kept copy stays as it was", () => {
+    const kept: string[][] = [];
+    walkElementsWithPath({ $Type: "A", child: { $Type: "B", leaf: { $Type: "C" } } }, (_place, ancestors) => {
+      kept.push([...ancestors].map((a) => a.element.$Type));
+    });
+    expect(kept).toEqual([[], ["A"], ["A", "B"]]);
   });
 });

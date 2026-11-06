@@ -1,0 +1,79 @@
+<div class="bgs-pane">
+  <div class="bgs-stack">
+    <section class="bgs-section">
+      <header class="bgs-pane-header">
+        <span class="bgs-pane-header__mark" data-bgs-mark aria-hidden="true"></span>
+        <h1 class="bgs-pane-title"><span class="bgs-pane-title__product">BGS-UtilityTools -</span> ClassSearcher</h1>
+        <p class="bgs-pane-subtitle">Find the elements that use a CSS class in pages, snippets and layouts</p>
+      </header>
+      <form id="classForm" novalidate>
+        <div class="bgs-field">
+          <label class="bgs-label" for="classInput">Class Name</label>
+          <input class="bgs-input" id="classInput" type="text" placeholder="e.g. card--highlight" autocomplete="off" spellcheck="false" aria-describedby="classHelp" />
+          <span class="bgs-help" id="classHelp">One class name, exact and case-sensitive. A leading dot is ignored.</span>
+          <span class="bgs-field__error" id="classError" hidden></span>
+        </div>
+        <button type="submit" class="bgs-btn bgs-btn--primary bgs-btn--block" id="searchButton">Search</button>
+      </form>
+      <div class="bgs-status-list" id="outcome" aria-live="polite"></div>
+      <div class="bgs-runlog" id="results" hidden>
+        <div class="bgs-runlog__head">
+          <span class="bgs-runlog__title">Results</span>
+          <span class="bgs-runlog__meta" id="resultsMeta"></span>
+          <span class="bgs-runlog__actions">
+            <button type="button" class="bgs-btn bgs-btn--sm" id="expandAll">Expand all</button>
+            <button type="button" class="bgs-btn bgs-btn--sm" id="collapseAll">Collapse all</button>
+            <button type="button" class="bgs-btn bgs-btn--sm" id="clearResults">Clear</button>
+          </span>
+        </div>
+        <div class="bgs-runlog__bar">
+          <span class="bgs-count bgs-count--info" id="countElements"></span>
+          <span class="bgs-count bgs-count--info" id="countDocuments"></span>
+        </div>
+        <ul class="bgs-tree" id="resultTree"></ul>
+      </div>
+    </section>
+
+    <section class="bgs-section">
+      <h2 class="bgs-section-title">How does this tool work?</h2>
+      <details class="bgs-groupbox" open>
+        <summary>What is searched</summary>
+        <div class="bgs-groupbox__body">
+          <ul class="bgs-list">
+            <li>The Class field of every widget, layout grid row and column, table cell and container region.</li>
+            <li>Dynamic classes: the class names inside quoted text, e.g. <span class="bgs-code">if $currentObject/IsUrgent then 'card--highlight' else ''</span></li>
+            <li>Pages, snippets, layouts, building blocks and page templates in your own modules.</li>
+          </ul>
+          <p>Matching is exact and case-sensitive, like CSS: <span class="bgs-code">card</span> doesn't find <span class="bgs-code">card--highlight</span> or <span class="bgs-code">Card</span>.</p>
+        </div>
+      </details>
+      <details class="bgs-groupbox">
+        <summary>What isn't found</summary>
+        <div class="bgs-groupbox__body">
+          <ul class="bgs-list">
+            <li>Class names built from parts in an expression, e.g. <span class="bgs-code">'card--' + $Status</span></li>
+            <li>Classes added by design properties</li>
+            <li>Classes set in pluggable widget properties, such as a dynamic cell class in Data grid 2</li>
+            <li>Marketplace modules and System</li>
+            <li>Classes in your theme's SCSS or in JavaScript</li>
+          </ul>
+        </div>
+      </details>
+      <details class="bgs-groupbox">
+        <summary>Opening a result</summary>
+        <div class="bgs-groupbox__body">
+          <p>Click a document to open it in Studio Pro. Click an element to open its document and select the element.</p>
+          <p>Results don't follow your edits. Search again after you change a page.</p>
+        </div>
+      </details>
+      <details class="bgs-groupbox">
+        <summary>Known limitations</summary>
+        <div class="bgs-groupbox__body">
+          <p>This tool is built on Mendix's Extensibility API for Studio Pro 11.12. The API is in beta, so behaviour can change between Studio Pro versions.</p>
+        </div>
+      </details>
+    </section>
+
+    <div data-bgs-footer></div>
+  </div>
+</div>

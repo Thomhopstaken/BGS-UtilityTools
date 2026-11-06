@@ -4,7 +4,8 @@
       "main": "main.js",
       "ui": {
         "namechangerpane": "namechangerpane.js",
-        "prefixerpane": "prefixerpane.js"
+        "prefixerpane": "prefixerpane.js",
+        "classsearcherpane": "classsearcherpane.js"
       }
     },
     "permissions": {

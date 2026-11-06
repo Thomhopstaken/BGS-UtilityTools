@@ -9,13 +9,28 @@ export class FakeElement {
   label = "";
   innerHTML = "";
   outerHTML = "";
+  hidden = false;
+  type = "";
+  title = "";
+  // Set by fakeDocument().createElement.
+  ownerDocument: unknown = null;
   children: FakeNode[] = [];
   readonly attributes = new Map<string, string>();
+  readonly listeners = new Map<string, (() => void)[]>();
 
   constructor(readonly tag: string) {}
 
   setAttribute(name: string, value: string): void {
     this.attributes.set(name, value);
+  }
+
+  addEventListener(type: string, listener: () => void): void {
+    this.listeners.set(type, [...(this.listeners.get(type) ?? []), listener]);
+  }
+
+  // Runs the listeners of an event, as a user action would.
+  dispatch(type: string): void {
+    this.listeners.get(type)?.forEach((listener) => listener());
   }
 
   appendChild<T extends FakeNode>(child: T): T {
@@ -33,11 +48,16 @@ export class FakeElement {
 }
 
 export function fakeDocument() {
-  return {
-    createElement: (tag: string) => new FakeElement(tag),
+  const doc = {
+    createElement: (tag: string): FakeElement => {
+      const element = new FakeElement(tag);
+      element.ownerDocument = doc;
+      return element;
+    },
     createTextNode: (text: string) => ({ text }),
     head: new FakeElement("head"),
   };
+  return doc;
 }
 
 // Text of a node and its children, depth first.

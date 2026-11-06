@@ -10,10 +10,10 @@ It is meant to grow into a toolbox (`ToDo.md`):
 |---|---|---|
 | 1 | **NameChanger**: rename an entity and everything named after it | Built, being tested in Studio Pro |
 | 2 | **Prefixer**: rename or remove a document prefix per document type, with every reference (§11) | Built, to be tested in Studio Pro |
-| 3 | CSS class searcher: find, add or remove CSS classes across pages | Planned |
+| 3 | **ClassSearcher**: find the elements that use a CSS class, shown as a tree (§12). Removing and adding classes come later | Search built, to be tested in Studio Pro |
 | 4 | Microflow color palette: color action activities based on markers | Planned |
 
-Tool names are one PascalCase word that says what the tool does (NameChanger, Prefixer). The same name is the pane title, the menu caption and the `src/` folder.
+Tool names are one PascalCase word that says what the tool does (NameChanger, Prefixer, ClassSearcher). The same name is the pane title, the menu caption and the `src/` folder.
 
 ### The problem the NameChanger solves
 
@@ -30,12 +30,14 @@ Studio Pro
  ├─ loads dist/BGS-UtilityTools/manifest.json
  │
  ├─ main.js  (src/main.ts), runs at startup
- │    ├─ registers the dockable panes "NameChanger" and "Prefixer"
- │    ├─ Extensions ▸ BGS-UtilityTools ▸ NameChanger / Prefixer → opens that pane
+ │    ├─ registers the dockable panes "NameChanger", "Prefixer" and "ClassSearcher"
+ │    ├─ Extensions ▸ BGS-UtilityTools ▸ NameChanger / Prefixer / ClassSearcher → opens that pane
  │    └─ "Rename entity…" on domain models (App Explorer + editor) → opens the pane with that module selected
  │         (NameChanger/contextMenu.ts; the module reaches the pane via messagePassing, paneMessages.ts)
  │
  ├─ prefixerpane.js  (src/Prefixer/main.ts), the Prefixer pane (§11)
+ │
+ ├─ classsearcherpane.js  (src/ClassSearcher/main.ts), the ClassSearcher pane (§12)
  │
  └─ namechangerpane.js  (src/NameChanger/main.ts), runs inside the pane
       ├─ main.ts                   wiring only: Studio Pro APIs in, view and controller out
@@ -48,13 +50,13 @@ Studio Pro
       └─ ui/runLog.ts              turns the report into the run log
 ```
 
-**Shared code** (`src/shared`), used by both tools:
-- `shared/rename/`: the generic rename job. Runner (`RenameJob.ts`: `runJob`, stages, batches), `JobScope`, `JobReport`, `QualifiedNameRenames`, `DocumentNameRegistry`, `ReferenceIndex`, `ReferenceUpdater` and `createReferenceUpdaters`, `existingReferences` (one save per unit), `JobTimings`, `UnitInfoCache`, `loadInScope`, run log groups, reserved names, Marketplace modules, and `rewrite/` (walker, qualified-name rewrite).
-- `shared/design/`: the design system code. Styles, `mountPane` (fills the `[data-bgs-mark]`, `[data-bgs-runlog]` and `[data-bgs-footer]` slots), `RunLogView` with `runLog.html` and the run log model, `footer.html` (the credits), `forms.ts` (selects, status messages), theme, DOM helpers.
+**Shared code** (`src/shared`), used by the tools:
+- `shared/rename/`: the generic rename job. Runner (`RenameJob.ts`: `runJob`, stages, batches), `JobScope`, `JobReport`, `QualifiedNameRenames`, `DocumentNameRegistry`, `ReferenceIndex`, `ReferenceUpdater` and `createReferenceUpdaters`, `existingReferences` (one save per unit), `JobTimings`, `UnitInfoCache`, `loadInScope`, run log groups, reserved names, Marketplace modules, and `rewrite/` (walker, with `walkElementsWithPath` for the ancestors; qualified-name rewrite). The ClassSearcher reuses `loadInScope`, `UnitInfoCache`, the Marketplace modules and the walker, read-only.
+- `shared/design/`: the design system code. Styles, `mountPane` (fills the `[data-bgs-mark]`, `[data-bgs-runlog]` and `[data-bgs-footer]` slots), `RunLogView` with `runLog.html` and the run log model, `TreeView` with the tree model (`tree.ts`), `footer.html` (the credits), `forms.ts` (selects, status messages), theme, DOM helpers.
 - Every pane: the header reads `BGS-UtilityTools - ToolName` next to the BGS mark (the product name in `bgs-pane-title__product`), and the credits footer ends the pane.
 
 **Pane behaviour:**
-- Before a run, both tools ask a Studio Pro confirmation (`ui.messageBoxes.ask`, warning) that ends with the shared commit warning (`shared/design/confirm.ts`). The pane is busy from the question on, so a second submit can't ask again.
+- Before a run, both rename tools ask a Studio Pro confirmation (`ui.messageBoxes.ask`, warning) that ends with the shared commit warning (`shared/design/confirm.ts`). The pane is busy from the question on, so a second submit can't ask again.
 - After a successful rename, the entity is renamed in the loaded list (no reload), and both pickers are reset to empty.
 - A context-menu preselect reloads the entities first, so new entities are listed.
 - Clicking a run log row opens that document (`ui.editors.editDocument`).
@@ -287,17 +289,27 @@ build-extension.mjs        esbuild entry points and deploy target (appDir)
 build.helpers.mjs          esbuild config, copy-manifest and copy-to-app plugins
 vitest.config.ts           unit test config
 ToDo.md                    roadmap
-src/manifest.json          main script and UI entry points (namechangerpane, prefixerpane)
+src/manifest.json          main script and UI entry points (namechangerpane, prefixerpane, classsearcherpane)
 src/main.ts                panes, Extensions menu, domain model context menus
 src/global.d.ts            .html/.css/.svg imports as strings
-src/shared/design/         BGS-UtilityTools design system: tokens.css, bundle.css (incl. run log), bgs-mark.svg,
+src/shared/design/         BGS-UtilityTools design system: tokens.css, bundle.css (incl. run log and tree), bgs-mark.svg,
                            theme, pane mount, DOM helpers, status, forms, runLog (model), RunLogView + runLog.html,
-                           footer.html
+                           tree (model), TreeView, footer.html
 src/shared/rename/         generic rename job: RenameJob (runner, stages), RenamePlanner (batches), JobScope,
                            JobReport, QualifiedNameRenames, DocumentNameRegistry, ReferenceIndex, ReferenceUpdater,
                            referenceTypes, existingReferences, JobTimings, UnitInfoCache, loadInScope,
                            runLogGroups, names, modules, types
-  rewrite/                 elementWalker, qualifiedNameRewrite
+  rewrite/                 elementWalker (walkElements, walkElementsWithPath), qualifiedNameRewrite
+src/ClassSearcher/         §12
+  main.ts                  pane entry point (wiring only)
+  ClassSearcherPane.ts     pane controller
+  documentKinds.ts         the searched document types
+  validation.ts            class name input
+  openTarget.ts            opens a result row in Studio Pro
+  search/                  classTokens (Class field and expression literals), structure (parent widget and labels),
+                           findClassUsages (one document), classSearch (all documents in scope)
+  results/                 resultTree (matches → TreeNodes)
+  ui/                      pane.html, PaneView.ts (DOM)
 src/Prefixer/              §11
   main.ts                  pane entry point (wiring only)
   PrefixerPane.ts          pane controller
@@ -334,7 +346,8 @@ src/NameChanger/
     refresh/               RefreshUpdater (extra save of pages and snippets)
     shared/                variableRewrite, urlPlaceholders, renameDocument
 src/UnitTests/             mirrors src/; shared/helpers/ holds the generic fakes, NameChanger/helpers/ the
-                           entity context, builders and FakeMessaging, Prefixer/helpers/ the tree and model fakes
+                           entity context, builders and FakeMessaging, Prefixer/helpers/ the tree and model fakes,
+                           ClassSearcher/helpers/ the builders for elements with a Class field
 ```
 
 ### Machine-specific paths
@@ -383,3 +396,37 @@ Navigation, App Settings (after startup, before shutdown, health check, workflow
 - No stale consistency errors after a run without a refresh pass; a unit whose last save is in the rename phase is fine.
 - A second `uiEntrypoint` (`prefixerpane`) loads its own bundle; `messageBoxes.ask` works from a pane; `editDocument` opens every document type.
 - What Studio Pro does with the code file of a renamed Java or JavaScript action.
+
+---
+
+## 12. The ClassSearcher
+
+A pane (Extensions ▸ BGS-UtilityTools ▸ ClassSearcher) that finds every element using one CSS class and shows the results as a tree. It only reads the app: no confirmation, no progress dialog; the pane is busy while a search runs.
+
+**Search rules (lead, 2026-11-06):**
+- **Exact and case-sensitive**, like CSS: `card` doesn't find `card--highlight` or `Card`. One class per search; a leading `.` is dropped.
+- **Class field** (`appearance.class`): split on whitespace.
+- **Dynamic classes** (`appearance.dynamicClasses`, an expression): only the classes inside its `'…'` string literals. A class built from parts (`'card--' + $Status`) can't be found.
+- **Scope:** pages, snippets, layouts, building blocks and page templates in the app's own modules (`documentKinds.ts`). Marketplace modules and System are skipped.
+- Every search loads the documents fresh (`loadInScope`, batches of 100), so edits since the last search are seen.
+
+**Results (lead, 2026-11-06):** three levels, document › parent widget › element holding the class (`results/resultTree.ts`, `search/structure.ts`):
+- One root per document, sorted by qualified name, with its match count. A document's own Class field shows on its row.
+- The parent is the nearest **named widget** above the element: a widget with a Class field and a name. Layout grid rows and columns, placeholders, tab pages and pluggable widget slots are skipped. An element without one sits right under the document.
+- Parents come in the order of their first result; parent rows show name and type only. A widget that holds the class and is a parent shows in both places.
+- Elements with a Class field but no name are labelled by kind and position: "Row 2", "Column 1", "Cell 3", "Item 1", "Left region".
+- A document row's chevron opens everything below it; a parent's chevron opens one level.
+
+A matching row shows its fields ("Class", "Dynamic") with the class marked. Every row keeps the element `$ID` (`RowTarget`), so removing or adding classes can build on it. Clicking a document row opens it; clicking an element row opens its document and focuses the element (`openTarget.ts`), or only opens the document when focusing fails.
+
+### Not found (the pane's "What isn't found")
+
+Classes built from parts in an expression, classes added by design properties, classes in pluggable widget properties (such as a Data grid 2 dynamic cell class), Marketplace modules and System, and classes in theme SCSS or JavaScript.
+
+### Open assumptions (UNVERIFIED, in the code)
+
+- A third `uiEntrypoint` (`classsearcherpane`) loads its own bundle.
+- `getUnitsInfo`/`loadAll` work on `layouts`, `buildingBlocks` and `pageTemplates`, with unit types `Pages$Layout`, `Pages$BuildingBlock` and `Pages$PageTemplate` (first use in this project).
+- Page element proxies, including a pluggable widget's `object.properties`, enumerate with `Object.keys` (the walker).
+- `editDocument(document, { id })` focuses a page widget; so far only used for entities.
+- How Mendix escapes a quote inside an expression string literal; both `''` and `\'` are read as one.

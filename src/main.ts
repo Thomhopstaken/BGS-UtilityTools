@@ -34,7 +34,19 @@ export const component: IComponent = {
                 uiEntrypoint: "prefixerpane",
             },
         );
-        console.info("panes registered: NameChanger, Prefixer");
+        // uiEntrypoint "classsearcherpane" is the bundle built from ClassSearcher/main.ts
+        // UNVERIFIED: a third uiEntrypoint loads its own bundle, like the Prefixer's.
+        const classSearcherHandle = await studioPro.ui.panes.register(
+            {
+                title: "ClassSearcher",
+                initialPosition: "right",
+            },
+            {
+                componentName: "extension/BGS-UtilityTools",
+                uiEntrypoint: "classsearcherpane",
+            },
+        );
+        console.info("panes registered: NameChanger, Prefixer, ClassSearcher");
 
         // Add a menu item to the Extensions menu
         await studioPro.ui.extensionsMenu.add({
@@ -53,6 +65,13 @@ export const component: IComponent = {
                     caption: "Prefixer",
                     action: async () => {
                         await studioPro.ui.panes.open(prefixerHandle);
+                    },
+                },
+                {
+                    menuId: "BGS-UtilityTools.ClassSearcherMenu",
+                    caption: "ClassSearcher",
+                    action: async () => {
+                        await studioPro.ui.panes.open(classSearcherHandle);
                     },
                 },
             ],

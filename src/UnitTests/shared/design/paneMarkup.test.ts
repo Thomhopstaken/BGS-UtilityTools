@@ -6,26 +6,45 @@ function read(path: string): string {
   return readFileSync(path, "utf-8");
 }
 
+const WITH_RUN_LOG = ["data-bgs-mark", "data-bgs-runlog", "data-bgs-footer"];
+
 const PANES = [
-  { tool: "NameChanger", path: "src/NameChanger/ui/pane.html" },
-  { tool: "Prefixer", path: "src/Prefixer/ui/pane.html" },
+  { tool: "NameChanger", path: "src/NameChanger/ui/pane.html", slots: WITH_RUN_LOG },
+  { tool: "Prefixer", path: "src/Prefixer/ui/pane.html", slots: WITH_RUN_LOG },
+  // Shows its results in a tree, not in the run log.
+  { tool: "ClassSearcher", path: "src/ClassSearcher/ui/pane.html", slots: ["data-bgs-mark", "data-bgs-footer"] },
 ];
 
-describe.each(PANES)("$tool pane markup", ({ tool, path }) => {
+describe.each(PANES)("$tool pane markup", ({ tool, path, slots }) => {
   const markup = read(path);
 
   it("titles the pane BGS-UtilityTools - tool name, with the product name in its own span", () => {
     expect(markup).toContain(`<h1 class="bgs-pane-title"><span class="bgs-pane-title__product">BGS-UtilityTools -</span> ${tool}</h1>`);
   });
 
-  it("has the mark, run log and footer slots once each", () => {
-    for (const slot of ["data-bgs-mark", "data-bgs-runlog", "data-bgs-footer"]) {
+  it("has its slots once each", () => {
+    for (const slot of slots) {
       expect(markup.split(slot).length - 1).toBe(1);
     }
   });
 
   it("puts the footer slot last in the stack", () => {
     expect(markup.trimEnd()).toMatch(/<div data-bgs-footer><\/div>\s*<\/div>\s*<\/div>$/);
+  });
+});
+
+describe("ClassSearcher pane markup", () => {
+  const markup = read("src/ClassSearcher/ui/pane.html");
+
+  it("has every element PaneView looks up, once", () => {
+    const ids = ["classForm", "classInput", "classHelp", "classError", "searchButton", "outcome", "results", "resultsMeta", "countElements", "countDocuments", "expandAll", "collapseAll", "clearResults", "resultTree"];
+    for (const id of ids) {
+      expect(markup.split(`id="${id}"`).length - 1, id).toBe(1);
+    }
+  });
+
+  it("starts with the results hidden", () => {
+    expect(markup).toContain('<div class="bgs-runlog" id="results" hidden>');
   });
 });
 

@@ -23,6 +23,11 @@ entryPoints.push({
   out: "prefixerpane",
 });
 
+entryPoints.push({
+  in: "src/ClassSearcher/main.ts",
+  out: "classsearcherpane",
+});
+
 const args = parseArgs(process.argv.slice(2));
 const buildContext = await esbuild.context({
   ...commonConfig,

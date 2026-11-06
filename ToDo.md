@@ -9,9 +9,9 @@
 - shows all currently used prefixes and allows you to update them in bulk
 - Prefixer pane: rename or remove one prefix per document type, with every reference (PROJECT_OVERVIEW.md §11)
 
-## 3. class searcher
+## 3. ClassSearcher (search built, to be tested in Studio Pro)
 
-- allows you to search css classes in app returning page and element.
+- search one css class in pages, snippets, layouts, building blocks and page templates; results as a tree: document › parent widget › element (PROJECT_OVERVIEW.md §12)
 - remove existing classes
 - add classes??
 
