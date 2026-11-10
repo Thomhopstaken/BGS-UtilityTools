@@ -19,7 +19,7 @@ entryPoints.push({
 });
 
 entryPoints.push({
-  in: "src/Prefixer/main.ts",
+  in: "src/PreFixer/main.ts",
   out: "prefixerpane",
 });
 

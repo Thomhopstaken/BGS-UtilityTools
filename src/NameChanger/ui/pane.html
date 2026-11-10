@@ -23,11 +23,22 @@
         </div>
         <div class="bgs-field">
           <label class="bgs-label" for="nameInput">New Name</label>
-          <input class="bgs-input" id="nameInput" type="text" placeholder="Enter new entity name" autocomplete="off" aria-describedby="nameError" />
+          <input
+            class="bgs-input"
+            id="nameInput"
+            type="text"
+            placeholder="Enter new entity name"
+            autocomplete="off"
+            aria-describedby="nameError"
+          />
           <span class="bgs-field__error" id="nameError" hidden></span>
         </div>
         <div class="bgs-field">
-          <label class="bgs-check"><input type="checkbox" id="exposedNamesBox" aria-describedby="exposedNamesHelp" /><span>Also rename exposed names in published services</span></label>
+          <label class="bgs-check"
+            ><input type="checkbox" id="exposedNamesBox" aria-describedby="exposedNamesHelp" /><span
+              >Also rename exposed names in published services</span
+            ></label
+          >
           <span class="bgs-help" id="exposedNamesHelp">Changes the published API: its clients must be updated.</span>
         </div>
         <button type="submit" class="bgs-btn bgs-btn--primary bgs-btn--block" id="changeName">Change Name</button>
@@ -43,11 +54,21 @@
         <summary>Before you rename</summary>
         <div class="bgs-groupbox__body">
           <ul class="bgs-list">
-            <li>Right-click a domain model, in the App Explorer or its editor, and choose <span class="bgs-code">Rename entity…</span> to open this pane with its module selected.</li>
-            <li>Commit your work first. A rename saves many documents at once, and version control is your clean way back.</li>
-            <li>If the entity is used in a message definition, the import and export mappings using it must be mapped again afterwards. Plan time for that.</li>
-            <li>Fix errors in documents that use the entity, such as retrieve activities in microflows. If a document can't be checked during planning, the rename stops before anything is changed.</li>
-            <li>Studio Pro is blocked while the rename runs; the progress dialog shows each step. In a large app this can take a few minutes.</li>
+            <li>
+              Commit your work first. A rename saves many documents at once, and version control is your clean way back.
+            </li>
+            <li>
+              If the entity is used in a message definition, the import and export mappings using it must be mapped
+              again afterwards.
+            </li>
+            <li>
+              Fix errors in documents that use the entity, such as retrieve activities in microflows. If a document
+              can't be checked during planning, the rename stops before anything is changed.
+            </li>
+            <li>
+              Studio Pro is blocked while the rename runs; the progress dialog shows each step. In a large app this can
+              take a few minutes.
+            </li>
           </ul>
         </div>
       </details>
@@ -56,25 +77,57 @@
         <div class="bgs-groupbox__body">
           <ul class="bgs-list">
             <li>The entity, and its source document when it is a view entity</li>
-            <li>Microflows, nanoflows, rules, pages and snippets that use the entity and have its name in their name, e.g. <span class="bgs-code">ACT_Order_Save</span></li>
-            <li>Associations of the entity that have its name in their name, cross-module associations included</li>
-            <li>Workflows with the entity as context, import and export mappings that map the entity, and JSON structures used by those mappings, when they have its name in their name</li>
-            <li>Message definitions, datasets, Java and JavaScript actions, and published REST, OData and web services that use the entity, when they have its name in their name</li>
-            <li>Exposed names in published services that contain the entity name, only when "Also rename exposed names" is ticked. This includes REST operation parameters and their <span class="bgs-code">{Param}</span> placeholders in operation paths; other path text, namespaces and versions are kept</li>
-            <li>Page, snippet, dataset, Java action and JavaScript action parameters of the entity's type that have its name in their name</li>
-            <li>Message definitions of the entity inside a collection that have its name in their name; exposed names are kept</li>
-            <li>The workflow parameter and the export mapping parameter, when of the entity's type and named after it</li>
-            <li>The entity name in workflow texts: title, workflow name and description, task names and descriptions, and activity captions</li>
-            <li>References to everything renamed, in view entity queries (OQL), domain models, Java and JavaScript actions, connector types, consumed REST and OData services, ML model mappings, database connections, Excel importer templates, microflows, nanoflows, rules, pages, snippets, layouts, menus, workflows, mappings, message definitions, datasets, scheduled events, published services, business event services and change data capture services</li>
+            <li>
+              Microflows, nanoflows, rules, pages and snippets that use the entity and have its name in their name, e.g.
+              <span class="bgs-code">ACT_Order_Save</span>
+            </li>
+            <li>Associations of the entity that have its name in their name</li>
+            <li>
+              Workflows with the entity as context, import and export mappings that map the entity, and JSON structures
+              used by those mappings, when they have its name in their name
+            </li>
+            <li>
+              Message definitions, datasets, Java and JavaScript actions, and published REST, OData and web services
+              that use the entity, when they have its name in their name
+            </li>
+            <li>
+              Exposed names in published services that contain the entity name, only when "Also rename exposed names" is
+              ticked. This includes REST operation parameters and their
+              <span class="bgs-code">{Param}</span> placeholders in operation paths; other path text, namespaces and
+              versions are kept
+            </li>
+            <li>
+              Page, snippet, dataset, Java action and JavaScript action parameters of the entity's type that have its
+              name in their name
+            </li>
+            <li>
+              Message definitions of the entity inside a collection that have its name in their name; exposed names are
+              kept
+            </li>
+            <li>
+              The workflow parameter and the export mapping parameter, when of the entity's type and named after it
+            </li>
+            <li>
+              The entity name in workflow texts: title, workflow name and description, task names and descriptions, and
+              activity captions
+            </li>
           </ul>
-          <p>Matching is case-sensitive and replaces every occurrence of the entity name, so <span class="bgs-code">ACT_Orders_Get</span> becomes <span class="bgs-code">ACT_Purchases_Get</span>. Names of other entities are protected: renaming <span class="bgs-code">Order</span> leaves <span class="bgs-code">OrderLine</span> alone.</p>
-          <p>A rename is skipped when the new name already exists; the run log counts these.</p>
+          <p>
+            Matching is case-sensitive and replaces every occurrence of the entity name, so
+            <span class="bgs-code">ACT_Orders_Get</span> becomes <span class="bgs-code">ACT_Purchases_Get</span>. Names
+            of other entities are protected: renaming <span class="bgs-code">Order</span> leaves
+            <span class="bgs-code">OrderLine</span> alone.
+          </p>
+          <p>All current mendix naming validations apply</p>
         </div>
       </details>
       <details class="bgs-groupbox">
         <summary>Which microflow variables are renamed</summary>
         <div class="bgs-groupbox__body">
-          <p>Variables of the entity's type (object or list) that have its name in their name, in microflows, nanoflows and rules, with every expression that uses them:</p>
+          <p>
+            Variables of the entity's type (object or list) that have its name in their name, in microflows, nanoflows
+            and rules, with every expression that uses them:
+          </p>
           <ul class="bgs-list">
             <li>Parameters, loop iterators and the return variable</li>
             <li>Create object, create list and create variable</li>
@@ -92,17 +145,37 @@
         <summary>What you need to check yourself</summary>
         <div class="bgs-groupbox__body">
           <ul class="bgs-list">
-            <li>Java and JavaScript action code in javasource and javascriptsource is not updated. The run log warns when an action changed.</li>
-            <li>Import and export mappings that use a changed message definition. They no longer match its schema, and updating them in Studio Pro clears them, so they must be mapped again by hand. The run log lists them per message definition.</li>
+            <li>
+              Java and JavaScript action code in javasource and javascriptsource is not updated. The run log warns when
+              an action changed.
+            </li>
+            <li>
+              Import and export mappings that use a changed message definition. They no longer match its schema, and
+              updating them in Studio Pro clears them, so they must be mapped again by hand. The run log lists them per
+              message definition.
+            </li>
             <li>Report widgets that use a renamed dataset are not updated. The run log warns when this applies.</li>
-            <li>Document templates are deprecated and not updated at all: no names, parameters or references. The run log warns when the app has any.</li>
+            <li>
+              Document templates are deprecated and not updated at all: no names, parameters or references. The run log
+              warns when the app has any.
+            </li>
             <li>Connector actions: references to renamed Java action parameters are not updated.</li>
             <li>ML model mappings keep their names, which mirror the model file.</li>
-            <li>Consumed REST and OData services and imported web services keep their names, which mirror the external API.</li>
-            <li>Clients of published services whose exposed names were renamed. The run log warns when this applies.</li>
-            <li>Database connections, Excel importer templates, connectors, business event services and change data capture services keep their names; message and exposed names are never renamed.</li>
-            <li>Demo users in App Security that use the entity: App Security is not reachable for extensions.</li>
-            <li>Navigation: menu items, home pages and the login page that point to renamed documents. The run log warns when this applies.</li>
+            <li>
+              Consumed REST and OData services and imported web services keep their names, which mirror the external
+              API.
+            </li>
+            <li>
+              Clients of published services whose exposed names were renamed. The run log warns when this applies.
+            </li>
+            <li>
+              Database connections, Excel importer templates, connectors, business event services and change data
+              capture services keep their names; message and exposed names are never renamed.
+            </li>
+            <li>
+              Navigation: menu items, home pages and the login page that point to renamed documents. The run log warns
+              when this applies.
+            </li>
           </ul>
           <p>Marketplace modules and System are never changed.</p>
         </div>
@@ -110,15 +183,23 @@
       <details class="bgs-groupbox">
         <summary>If a rename fails or is cancelled</summary>
         <div class="bgs-groupbox__body">
-          <p>Nothing is changed until the entity is renamed. If the rename stops before that, the entity keeps its name and the run log lists why.</p>
-          <p>If it stops or documents fail after the entity was renamed, documents updated so far keep their new names. The run log lists what failed. Fix those documents by hand, or revert through version control.</p>
+          <p>
+            Nothing is changed until the entity is renamed. If the rename stops before that, the entity keeps its name
+            and the run log lists why.
+          </p>
+          <p>
+            If it stops or documents fail after the entity was renamed, documents updated so far keep their new names.
+            The run log lists what failed. Fix those documents by hand, or revert through version control.
+          </p>
         </div>
       </details>
       <details class="bgs-groupbox">
         <summary>Known limitations</summary>
         <div class="bgs-groupbox__body">
-          <p>This tool is built on Mendix's Extensibility API for Studio Pro 11.12. The API is in beta, so behaviour can change between Studio Pro versions.</p>
-          <p>If errors remain after a successful rename, press F4 to refresh.</p>
+          <p>
+            This tool is built on Mendix's Extensibility API for Studio Pro 11.12. The API is in beta, so behaviour can
+            change between Studio Pro versions.
+          </p>
         </div>
       </details>
     </section>

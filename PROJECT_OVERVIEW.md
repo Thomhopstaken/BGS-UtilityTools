@@ -9,11 +9,11 @@ It is meant to grow into a toolbox (`ToDo.md`):
 | # | Tool | Status |
 |---|---|---|
 | 1 | **NameChanger**: rename an entity and everything named after it | Built, being tested in Studio Pro |
-| 2 | **Prefixer**: rename or remove a document prefix per document type, with every reference (§11) | Built, to be tested in Studio Pro |
+| 2 | **PreFixer**: rename or remove a document prefix per document type, with every reference (§11) | Built, to be tested in Studio Pro |
 | 3 | **ClassSearcher**: find the elements that use a CSS class, shown as a tree (§12). Removing and adding classes come later | Search built, to be tested in Studio Pro |
 | 4 | Microflow color palette: color action activities based on markers | Planned |
 
-Tool names are one PascalCase word that says what the tool does (NameChanger, Prefixer, ClassSearcher). The same name is the pane title, the menu caption and the `src/` folder.
+Tool names are one PascalCase word that says what the tool does (NameChanger, PreFixer, ClassSearcher). The same name is the pane title, the menu caption and the `src/` folder.
 
 ### The problem the NameChanger solves
 
@@ -30,12 +30,12 @@ Studio Pro
  ├─ loads dist/BGS-UtilityTools/manifest.json
  │
  ├─ main.js  (src/main.ts), runs at startup
- │    ├─ registers the dockable panes "NameChanger", "Prefixer" and "ClassSearcher"
- │    ├─ Extensions ▸ BGS-UtilityTools ▸ NameChanger / Prefixer / ClassSearcher → opens that pane
+ │    ├─ registers the dockable panes "NameChanger", "PreFixer" and "ClassSearcher"
+ │    ├─ Extensions ▸ BGS-UtilityTools ▸ NameChanger / PreFixer / ClassSearcher → opens that pane
  │    └─ "Rename entity…" on domain models (App Explorer + editor) → opens the pane with that module selected
  │         (NameChanger/contextMenu.ts; the module reaches the pane via messagePassing, paneMessages.ts)
  │
- ├─ prefixerpane.js  (src/Prefixer/main.ts), the Prefixer pane (§11)
+ ├─ prefixerpane.js  (src/PreFixer/main.ts), the PreFixer pane (§11)
  │
  ├─ classsearcherpane.js  (src/ClassSearcher/main.ts), the ClassSearcher pane (§12)
  │
@@ -209,7 +209,7 @@ Checked and not relevant (no entity references): image and icon collections, reg
 - **No reference is ever updated by Studio Pro** after a rename through the API; the tool rewrites them all.
 - **Documents are checked only on save.** Hence the phase order, the reference order and the refresh pass.
 - **The typings don't always match runtime.** Rules have no `parameters` list, and nanoflows hold their parameters only in the object collection. Code guards against missing properties.
-- **`getModulesTree()` keeps old names** of documents renamed through the API (Prefixer testing, 2026-11-02). The Prefixer puts its session's renames over every tree read (`shared/rename/RenamedDocumentNames.ts`). The NameChanger still reads the tree as it is (document name checks in Preparing). UNVERIFIED: when the tree catches up.
+- **`getModulesTree()` keeps old names** of documents renamed through the API (PreFixer testing, 2026-11-02). The PreFixer puts its session's renames over every tree read (`shared/rename/RenamedDocumentNames.ts`). The NameChanger still reads the tree as it is (document name checks in Preparing). UNVERIFIED: when the tree catches up.
 - **`loadAll` loads 10 units by default.** The job always passes the count it wants.
 - **API cost (lead's timings):** `loadAll` ~0.5 s per call regardless of units, `save` ~0.11 s per unit, `resolve` and `getUnitsInfo` a few ms. Fewer calls matter more than fewer units.
 - **Clicking a run log row works:** `editDocument` accepts the unit `$ID`.
@@ -310,14 +310,14 @@ src/ClassSearcher/         §12
                            findClassUsages (one document), classSearch (all documents in scope)
   results/                 resultTree (matches → TreeNodes)
   ui/                      pane.html, PaneView.ts (DOM)
-src/Prefixer/              §11
+src/PreFixer/              §11
   main.ts                  pane entry point (wiring only)
-  PrefixerPane.ts          pane controller
+  PreFixerPane.ts          pane controller
   prefixModel.ts           modules tree → documents and prefixes per type group
   prefixRename.ts          prefix rule, new names, name checks
   validation.ts            new prefix and request checks
   documentTypes.ts         renamable types, groups, risks
-  referenceTypes.ts        the Prefixer's reference pass and allow-lists
+  referenceTypes.ts        the PreFixer's reference pass and allow-lists
   prefixService.ts         builds and runs one prefix job
   framework/               PrefixPrepareStep, MarketplaceScanStep, PrefixPlanStep, prefixPlanner, PrefixPlan,
                            RenameCheckStep, PrefixJobState, domainNames
@@ -346,7 +346,7 @@ src/NameChanger/
     refresh/               RefreshUpdater (extra save of pages and snippets)
     shared/                variableRewrite, urlPlaceholders, renameDocument
 src/UnitTests/             mirrors src/; shared/helpers/ holds the generic fakes, NameChanger/helpers/ the
-                           entity context, builders and FakeMessaging, Prefixer/helpers/ the tree and model fakes,
+                           entity context, builders and FakeMessaging, PreFixer/helpers/ the tree and model fakes,
                            ClassSearcher/helpers/ the builders for elements with a Class field
 ```
 
@@ -357,9 +357,9 @@ src/UnitTests/             mirrors src/; shared/helpers/ holds the generic fakes
 
 ---
 
-## 11. The Prefixer
+## 11. The PreFixer
 
-A pane (Extensions ▸ BGS-UtilityTools ▸ Prefixer) that renames or removes a document prefix across the app's own modules, and rewrites every reference to the renamed documents.
+A pane (Extensions ▸ BGS-UtilityTools ▸ PreFixer) that renames or removes a document prefix across the app's own modules, and rewrites every reference to the renamed documents.
 
 **The prefix rule (lead):**
 - 1–4 capital letters A–Z before the first `_`, with something after it. `ACT_Order_Save` and `ACT_Save` have `ACT`; `Act_Order_Save`, `V2_Order_Save` and `ACT_` have none.

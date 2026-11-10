@@ -22,11 +22,11 @@ export const component: IComponent = {
             },
         );
 
-        // uiEntrypoint "prefixerpane" is the bundle built from Prefixer/main.ts
+        // uiEntrypoint "prefixerpane" is the bundle built from PreFixer/main.ts
         // UNVERIFIED: a second uiEntrypoint next to "namechangerpane" loads its own bundle.
-        const prefixerHandle = await studioPro.ui.panes.register(
+        const preFixerHandle = await studioPro.ui.panes.register(
             {
-                title: "Prefixer",
+                title: "PreFixer",
                 initialPosition: "right",
             },
             {
@@ -35,7 +35,7 @@ export const component: IComponent = {
             },
         );
         // uiEntrypoint "classsearcherpane" is the bundle built from ClassSearcher/main.ts
-        // UNVERIFIED: a third uiEntrypoint loads its own bundle, like the Prefixer's.
+        // UNVERIFIED: a third uiEntrypoint loads its own bundle, like the PreFixer's.
         const classSearcherHandle = await studioPro.ui.panes.register(
             {
                 title: "ClassSearcher",
@@ -46,7 +46,7 @@ export const component: IComponent = {
                 uiEntrypoint: "classsearcherpane",
             },
         );
-        console.info("panes registered: NameChanger, Prefixer, ClassSearcher");
+        console.info("panes registered: NameChanger, PreFixer, ClassSearcher");
 
         // Add a menu item to the Extensions menu
         await studioPro.ui.extensionsMenu.add({
@@ -61,10 +61,10 @@ export const component: IComponent = {
                     },
                 },
                 {
-                    menuId: "BGS-UtilityTools.PrefixerMenu",
-                    caption: "Prefixer",
+                    menuId: "BGS-UtilityTools.PreFixerMenu",
+                    caption: "PreFixer",
                     action: async () => {
-                        await studioPro.ui.panes.open(prefixerHandle);
+                        await studioPro.ui.panes.open(preFixerHandle);
                     },
                 },
                 {

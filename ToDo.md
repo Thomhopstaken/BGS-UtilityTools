@@ -7,7 +7,7 @@
 ## 2. prefix (built, to be tested in Studio Pro)
 
 - shows all currently used prefixes and allows you to update them in bulk
-- Prefixer pane: rename or remove one prefix per document type, with every reference (PROJECT_OVERVIEW.md §11)
+- PreFixer pane: rename or remove one prefix per document type, with every reference (PROJECT_OVERVIEW.md §11)
 
 ## 3. ClassSearcher (search built, to be tested in Studio Pro)
 

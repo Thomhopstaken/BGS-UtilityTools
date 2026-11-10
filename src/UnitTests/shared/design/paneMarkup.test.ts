@@ -10,7 +10,7 @@ const WITH_RUN_LOG = ["data-bgs-mark", "data-bgs-runlog", "data-bgs-footer"];
 
 const PANES = [
   { tool: "NameChanger", path: "src/NameChanger/ui/pane.html", slots: WITH_RUN_LOG },
-  { tool: "Prefixer", path: "src/Prefixer/ui/pane.html", slots: WITH_RUN_LOG },
+  { tool: "PreFixer", path: "src/PreFixer/ui/pane.html", slots: WITH_RUN_LOG },
   // Shows its results in a tree, not in the run log.
   { tool: "ClassSearcher", path: "src/ClassSearcher/ui/pane.html", slots: ["data-bgs-mark", "data-bgs-footer"] },
 ];
