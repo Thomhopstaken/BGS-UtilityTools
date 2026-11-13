@@ -6,3 +6,13 @@ npm-debug.log*
 
 .DS_Store
 Thumbs.db
+
+# Claude Code, local only
+.claude/settings.local.json
+.claude/worktrees/
+
+.env*
+coverage/
+*.tsbuildinfo
+
+.vscode/
