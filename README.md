@@ -1,6 +1,6 @@
 # BGS-UtilityTools
 
-A Mendix Studio Pro extension by Blue Green Solutions: a toolbox of panes that search an app model or change it in bulk, keeping every reference intact.
+A Mendix Studio Pro extension by Blue Green Solutions: A set of tools to make tedious mendix tasks easier.
 
 It adds **Extensions ▸ BGS-UtilityTools** to Studio Pro's menu. Built on `@mendix/extensions-api` `0.11.2-mendix.11.12.2` (Studio Pro 11.12). The API is in beta and can change between Studio Pro versions.
 
