@@ -31,6 +31,18 @@ describe("mountPane", () => {
     expect(slots.mark.map((m) => m.innerHTML)).toEqual(["<svg/>", "<svg/>"]);
   });
 
+  it("logs clicks on every bug report link", () => {
+    const href = "https://github.com/Thomhopstaken/BGS-UtilityTools/issues/new/choose";
+    const link = Object.assign(new FakeElement("a"), { href });
+    const doc = documentWithRoot({ runLog: [], footer: [], mark: [] });
+    doc.root!.querySelectorAll = (selector: string) => (selector === "[data-bgs-bug-report]" ? [link] : []);
+    const info = vi.spyOn(console, "info").mockImplementation(() => {});
+    mountPane(doc as unknown as Document, "");
+    link.dispatch("click");
+    expect(info).toHaveBeenCalledWith(`bug report link clicked: ${href}`);
+    info.mockRestore();
+  });
+
   it("throws without #root", () => {
     expect(() => mountPane(documentWithRoot(null) as unknown as Document, "")).toThrow("Pane root element #root not found.");
   });

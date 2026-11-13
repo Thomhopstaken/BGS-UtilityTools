@@ -28,6 +28,12 @@ describe.each(PANES)("$tool pane markup", ({ tool, path, slots }) => {
     }
   });
 
+  it("starts every groupbox closed", () => {
+    const groupboxes = markup.match(/<details class="bgs-groupbox"[^>]*>/g) ?? [];
+    expect(groupboxes.length).toBeGreaterThan(0);
+    expect(groupboxes.every((tag) => !/\sopen\b/.test(tag))).toBe(true);
+  });
+
   it("puts the footer slot last in the stack", () => {
     expect(markup.trimEnd()).toMatch(/<div data-bgs-footer><\/div>\s*<\/div>\s*<\/div>$/);
   });
@@ -49,7 +55,32 @@ describe("ClassSearcher pane markup", () => {
 });
 
 describe("footer markup", () => {
-  it("is the credits line", () => {
-    expect(read("src/shared/design/footer.html").trim()).toBe('<footer class="bgs-pane-footer">Made by Thom Hopstaken · Blue Green Solutions</footer>');
+  const markup = read("src/shared/design/footer.html");
+  const issuesUrl = "https://github.com/Thomhopstaken/BGS-UtilityTools/issues/new/choose";
+
+  it("has the credits line", () => {
+    expect(markup).toContain('<p class="bgs-pane-footer__line">Made by Thom Hopstaken · Blue Green Solutions</p>');
+  });
+
+  it("links to the GitHub issue chooser in a new window", () => {
+    expect(markup).toContain(
+      `Found a bug? <a class="bgs-link" data-bgs-bug-report href="${issuesUrl}" target="_blank" rel="noopener noreferrer">Report it on GitHub</a>`,
+    );
+  });
+
+  it("doesn't show the URL as text", () => {
+    expect(markup).not.toContain("bgs-pane-footer__url");
+    expect(markup.split(issuesUrl).length - 1).toBe(1);
+  });
+});
+
+describe("footer styles", () => {
+  const css = read("src/shared/design/bundle.css");
+
+  it("styles the footer lines and the link", () => {
+    for (const selector of [".bgs-pane-footer__line {", ".bgs-link {", ".bgs-link:focus-visible {"]) {
+      expect(css, selector).toContain(selector);
+    }
+    expect(css).not.toContain(".bgs-pane-footer__url");
   });
 });

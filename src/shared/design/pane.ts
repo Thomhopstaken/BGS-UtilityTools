@@ -26,6 +26,10 @@ export function mountPane(doc: Document, markup: string): HTMLElement {
   root.querySelectorAll("[data-bgs-footer]").forEach((slot) => {
     slot.outerHTML = footer;
   });
+  // Logs clicks only; Studio Pro opens the link in the default browser.
+  root.querySelectorAll<HTMLAnchorElement>("[data-bgs-bug-report]").forEach((link) => {
+    link.addEventListener("click", () => console.info(`bug report link clicked: ${link.href}`));
+  });
   root.querySelectorAll("[data-bgs-mark]").forEach((slot) => {
     slot.innerHTML = mark;
   });
