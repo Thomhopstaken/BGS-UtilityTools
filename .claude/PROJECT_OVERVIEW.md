@@ -8,9 +8,9 @@ It is meant to grow into a toolbox (`ToDo.md`):
 
 | #   | Tool                                                                                                                     | Status                                   |
 | --- | ------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------- |
-| 1   | **NameChanger**: rename an entity and everything named after it                                                          | Built, being tested in Studio Pro        |
-| 2   | **PreFixer**: rename or remove a document prefix per document type, with every reference (§11)                           | Built, to be tested in Studio Pro        |
-| 3   | **ClassSearcher**: find the elements that use a CSS class, shown as a tree (§12). Removing and adding classes come later | Search built, to be tested in Studio Pro |
+| 1   | **NameChanger**: rename an entity and everything named after it                                                          | Built      |
+| 2   | **PreFixer**: rename or remove a document prefix per document type, with every reference (§11)                           | Built        |
+| 3   | **ClassSearcher**: find the elements that use a CSS class, shown as a tree (§12). Removing and adding classes come later | Search built, further updated planned |
 
 Tool names are one PascalCase word that says what the tool does (NameChanger, PreFixer, ClassSearcher). The same name is the pane title, the menu caption and the `src/` folder.
 
