@@ -25,6 +25,12 @@ describe("DataSetInspector.usesEntity", () => {
     expect(inspector.usesEntity(dataSet("DS", [], oqlSource("SELECT MyModule.Order.Total FROM X")))).toBe(true);
   });
 
+  it("is false for a constant call @Module.Entity only", () => {
+    expect(inspector.usesEntity(dataSet("DS", [], oqlSource("SELECT * FROM X WHERE x = @MyModule.Order")))).toBe(false);
+    expect(inspector.usesEntity(dataSet("DS", [], oqlSource("SELECT * FROM X WHERE x = @MyModule.Purchase")))).toBe(false);
+    expect(inspector.usesEntity(dataSet("DS", [], oqlSource("SELECT * FROM MyModule.Order WHERE x = @MyModule.Order")))).toBe(true);
+  });
+
   it("is false for other entities, literals and empty queries", () => {
     expect(inspector.usesEntity(dataSet("DS", [], oqlSource("SELECT * FROM MyModule.OrderLine WHERE x = 'MyModule.Order'")))).toBe(false);
     expect(inspector.usesEntity(dataSet("DS", [dataSetParameter("Order", stringType())], oqlSource(null)))).toBe(false);

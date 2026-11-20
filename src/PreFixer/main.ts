@@ -3,6 +3,7 @@ import * as Mx from "@mendix/extensions-api";
 import { injectStyles, mountPane } from "../shared/design/pane";
 import { applyTheme } from "../shared/design/theme";
 import { RenamedDocumentNames } from "../shared/rename/RenamedDocumentNames";
+import { currentNameLoader } from "./currentNames";
 import { PreFixerPane } from "./PreFixerPane";
 import { loadPreFixerData } from "./prefixModel";
 import { runPrefixRename } from "./prefixService";
@@ -22,6 +23,7 @@ export const component: Mx.IComponent = {
     const renamedNames = new RenamedDocumentNames();
     const pane = new PreFixerPane(view, {
       loadData: () => loadPreFixerData(model.projects, renamedNames),
+      verifyRenames: () => renamedNames.verify(currentNameLoader(model)),
       rename: (change, scope) =>
         runPrefixRename(
           { ...scope, model, renamedNames, runProgress: (title, steps) => studioPro.ui.dialogs.showProgressDialog(title, steps) },

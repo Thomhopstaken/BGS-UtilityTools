@@ -117,6 +117,16 @@ describe("EntityRenameStep", () => {
     expect(report.updatedReferences).toBe(2);
   });
 
+  it("run leaves a constant call @Module.Entity in its domain model", async () => {
+    const entity = { $Type: "DomainModels$Entity", $ID: "entity-1", name: "Order" };
+    const rule = { $Type: "DomainModels$ValidationRule", expression: "@MyModule.Order > 0", attribute: "MyModule.Order.Total" };
+    const model = { $Type: "DomainModels$DomainModel", $ID: "dm-1", entities: [entity], rule } as unknown as DomainModels.DomainModel;
+    const report = new RenameReport();
+    expect(await step(fakeDomainModels(model)).run(report)).toBe(true);
+    expect(rule).toMatchObject({ expression: "@MyModule.Order > 0", attribute: "MyModule.Purchase.Total" });
+    expect(report.updatedReferences).toBe(1);
+  });
+
   it("run renames the planned associations of its domain model in the same save", async () => {
     const entity = { $Type: "DomainModels$Entity", $ID: "entity-1", name: "Order" };
     const own = { $Type: "DomainModels$Association", $ID: "a1", name: "Order_Customer", parent: "MyModule.Order", child: "MyModule.Customer" };

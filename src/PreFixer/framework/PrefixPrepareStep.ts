@@ -13,6 +13,8 @@ const DOCUMENT_TEMPLATE = "DocumentTemplates$DocumentTemplate";
 
 // Model calls the step makes; injected so tests can fake them.
 export type PrefixPrepareDeps = {
+  // Checks this session's renames against the model first, so a revert in Studio Pro is not planned with.
+  verifyRenames(): Promise<void>;
   getModulesTree(): Promise<readonly TreeModule[]>;
   // Domain models and module security of the app's own modules.
   loadDomainModels(): Promise<readonly InModule<DomainModels.DomainModel>[]>;
@@ -37,6 +39,7 @@ export class PrefixPrepareStep implements JobStep {
   async run(report: JobReport): Promise<true | string> {
     const { state, scope, change } = this.deps;
     try {
+      await this.deps.verifyRenames();
       const tree = await this.deps.getModulesTree();
       state.names.load(tree);
       state.marketplaceModules = new Set(tree.filter((m) => m.fromAppStore && m.name !== "System").map((m) => m.name));

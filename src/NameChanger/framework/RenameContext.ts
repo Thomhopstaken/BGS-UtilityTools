@@ -54,7 +54,7 @@ export function createRenameContext(input: RenameContextInput): RenameContext {
 // The job's renames, seeded with the entity rename, declared by its domain model.
 export function entityRenames(context: RenameContext): QualifiedNameRenames {
   const renames = new QualifiedNameRenames();
-  renames.add(context.oldQualifiedName, context.newQualifiedName, context.domainModelId);
+  renames.addEntity(context.oldQualifiedName, context.newQualifiedName, context.domainModelId);
   return renames;
 }
 

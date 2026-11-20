@@ -126,3 +126,27 @@ describe("QualifiedNameRenames", () => {
     expect([...renames.prefixes()]).toEqual([]);
   });
 });
+
+describe("QualifiedNameRenames.addEntity", () => {
+  it("adds the rename and lists it in notAfterAt; other renames are not listed", () => {
+    const renames = new QualifiedNameRenames();
+    renames.addEntity("M.Order", "M.Purchase", "dm-1");
+    renames.addDocument("M", "CON_Order", "CON_Purchase", "con-1");
+    expect([...renames.map]).toEqual([
+      ["M.Order", "M.Purchase"],
+      ["M.CON_Order", "M.CON_Purchase"],
+    ]);
+    expect([...renames.notAfterAt]).toEqual(["M.Order"]);
+    expect(renames.existing(() => true).get("M.Order")).toBe("M.Purchase");
+  });
+
+  it("ignores a rename to the same name and forgets a removed entity", () => {
+    const renames = new QualifiedNameRenames();
+    renames.addEntity("M.Order", "M.Order");
+    expect(renames.notAfterAt.size).toBe(0);
+    renames.addEntity("M.Order", "M.Purchase");
+    renames.remove("M.Order");
+    expect(renames.size).toBe(0);
+    expect(renames.notAfterAt.size).toBe(0);
+  });
+});

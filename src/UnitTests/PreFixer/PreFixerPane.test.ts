@@ -70,6 +70,7 @@ function setup(overrides: Partial<PreFixerDeps> = {}) {
   const view = new FakeView();
   const deps = {
     loadData: vi.fn(async () => data),
+    verifyRenames: vi.fn(async () => undefined),
     rename: vi.fn(async () => result()),
     openDocument: vi.fn(async () => undefined),
     confirm: vi.fn(async () => true),
@@ -225,15 +226,40 @@ describe("PreFixerPane.submit", () => {
 });
 
 describe("PreFixerPane.refresh", () => {
-  it("loads the prefixes again and updates the preview, keeping the form", async () => {
-    const loadData = vi.fn().mockResolvedValueOnce(data).mockResolvedValueOnce({ ...data, prefixes: [pop] });
-    const { view, pane } = setup({ loadData });
+  it("checks the renames first, then loads the prefixes again and updates the preview, keeping the form", async () => {
+    const order: string[] = [];
+    const loadData = vi.fn(async () => {
+      order.push("load");
+      return order.length > 1 ? { ...data, prefixes: [pop] } : data;
+    });
+    const verifyRenames = vi.fn(async () => {
+      order.push("verify");
+    });
+    const { view, pane } = setup({ loadData, verifyRenames });
     await pane.load();
     await pane.refresh();
-    expect(loadData).toHaveBeenCalledTimes(2);
+    expect(order).toEqual(["load", "verify", "load"]);
     expect(view.prefixes).toEqual([[act, pop], [pop]]);
     expect(view.previews).toHaveLength(2);
     expect(view.resets).toBe(0);
+  });
+
+  it("is busy while checking and reloading", async () => {
+    const { view, pane } = setup();
+    await pane.load();
+    await pane.refresh();
+    expect(view.busy).toEqual([true, false]);
+  });
+
+  it("warns when the renames can't be checked and still reloads", async () => {
+    const { view, deps, pane } = setup({ verifyRenames: vi.fn(async () => Promise.reject(new Error("could not load pages"))) });
+    await pane.load();
+    await pane.refresh();
+    expect(view.outcome).toEqual([
+      { tone: "warning", text: "Could not check the renames of this session: could not load pages. Reverted renames may still show." },
+    ]);
+    expect(deps.loadData).toHaveBeenCalledTimes(2);
+    expect(view.busy).toEqual([true, false]);
   });
 
   it("warns and keeps the prefixes when the reload fails", async () => {
@@ -243,6 +269,7 @@ describe("PreFixerPane.refresh", () => {
     await pane.refresh();
     expect(view.outcome).toEqual([{ tone: "warning", text: "Could not reload the prefixes: offline" }]);
     expect(view.prefixes).toEqual([[act, pop]]);
+    expect(view.busy).toEqual([true, false]);
   });
 
   it("is ignored while a rename runs", async () => {
@@ -254,6 +281,7 @@ describe("PreFixerPane.refresh", () => {
     const running = pane.submit();
     await vi.waitFor(() => expect(rename).toHaveBeenCalledOnce());
     await pane.refresh();
+    expect(deps.verifyRenames).not.toHaveBeenCalled();
     expect(deps.loadData).toHaveBeenCalledOnce();
     finish(result(0));
     await running;

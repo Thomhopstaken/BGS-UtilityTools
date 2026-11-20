@@ -3,15 +3,30 @@ import { type ModelElement, walkElements } from "./elementWalker";
 // Old qualified name -> new. Case-sensitive.
 export type QualifiedNameMap = ReadonlyMap<string, string>;
 
+// Qualified names never matched right after `@`: `@Module.Name` calls a constant, so an entity of the same name keeps
+// its constant calls (entity renames only; the PreFixer renames constants through `@`).
+export type NotAfterAt = ReadonlySet<string>;
+
+const NONE: NotAfterAt = new Set();
+
+// True when the dotted name at index is a constant call (`@Module.Name`).
+function isAfterAt(value: string, index: number | undefined): boolean {
+  return index !== undefined && index > 0 && value[index - 1] === "@";
+}
+
 // Single-quoted literals ('' is an escaped quote) are matched first so they are left as they are.
 // A dotted name (Module.Name, Module.Name.Member) not preceded by an identifier char, `.` or `$`.
 const DOTTED_NAMES = /'(?:[^']|'')*'|(?<![A-Za-z0-9_.$])([A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)+)/g;
 
-// Longest renamed prefix on a segment boundary: Module.Doc.Param before Module.Doc.
-function rewriteDottedName(name: string, renames: QualifiedNameMap): string {
+// Longest renamed prefix on a segment boundary: Module.Doc.Param before Module.Doc. afterAt: keys in notAfterAt skipped.
+function rewriteDottedName(name: string, renames: QualifiedNameMap, afterAt: boolean, notAfterAt: NotAfterAt): string {
   const segments = name.split(".");
   for (let length = segments.length; length >= 2; length--) {
     const prefix = segments.slice(0, length).join(".");
+    if (afterAt && notAfterAt.has(prefix)) {
+      console.debug(`kept constant call @${name}: ${prefix} is not a constant rename`);
+      continue;
+    }
     const renamed = renames.get(prefix);
     if (renamed !== undefined) {
       return [renamed, ...segments.slice(length)].join(".");
@@ -22,12 +37,13 @@ function rewriteDottedName(name: string, renames: QualifiedNameMap): string {
 
 // Rewrites every renamed qualified name in an expression, XPath or reference property.
 // `Module.OrderLine` and `Module.Order_Customer` are never touched when only `Module.Order` is renamed.
-export function rewriteQualifiedNames(value: string, renames: QualifiedNameMap): string {
+// notAfterAt: names left alone in `@Module.Name` (constant calls).
+export function rewriteQualifiedNames(value: string, renames: QualifiedNameMap, notAfterAt: NotAfterAt = NONE): string {
   if (renames.size === 0 || !value.includes(".")) {
     return value;
   }
-  const newValue = value.replace(DOTTED_NAMES, (match: string, name?: string) =>
-    name === undefined ? match : rewriteDottedName(name, renames),
+  const newValue = value.replace(DOTTED_NAMES, (match: string, name: string | undefined, offset: number) =>
+    name === undefined ? match : rewriteDottedName(name, renames, isAfterAt(value, offset), notAfterAt),
   );
   if (newValue !== value) {
     console.debug(`updated reference '${value}' to '${newValue}'`);
@@ -35,10 +51,14 @@ export function rewriteQualifiedNames(value: string, renames: QualifiedNameMap):
   return newValue;
 }
 
-// True when value holds qname or a member of it (qname.Member), outside quoted literals.
-export function referencesQualifiedName(value: string, qname: string): boolean {
+// True when value holds qname or a member of it (qname.Member), outside quoted literals. skipAfterAt: a constant call
+// (`@qname`) doesn't count.
+export function referencesQualifiedName(value: string, qname: string, skipAfterAt = false): boolean {
   for (const match of value.matchAll(DOTTED_NAMES)) {
     const name = match[1];
+    if (skipAfterAt && isAfterAt(value, match.index)) {
+      continue;
+    }
     if (name !== undefined && (name === qname || name.startsWith(`${qname}.`))) {
       return true;
     }
@@ -47,8 +67,13 @@ export function referencesQualifiedName(value: string, qname: string): boolean {
 }
 
 // The first of qnames that value references (the name itself or a member of it), outside quoted literals; null if
-// none. qnames must be qualified (at least Module.Name). One regex pass, whatever the number of qnames.
-export function findReferencedName(value: string, qnames: { has(qname: string): boolean }): string | null {
+// none. qnames must be qualified (at least Module.Name). One regex pass, whatever the number of qnames. notAfterAt: names
+// that don't count in `@Module.Name` (constant calls).
+export function findReferencedName(
+  value: string,
+  qnames: { has(qname: string): boolean },
+  notAfterAt: NotAfterAt = NONE,
+): string | null {
   if (!value.includes(".")) {
     return null;
   }
@@ -57,10 +82,11 @@ export function findReferencedName(value: string, qnames: { has(qname: string): 
     if (name === undefined) {
       continue;
     }
+    const afterAt = isAfterAt(value, match.index);
     const segments = name.split(".");
     for (let length = 2; length <= segments.length; length++) {
       const prefix = segments.slice(0, length).join(".");
-      if (qnames.has(prefix)) {
+      if (qnames.has(prefix) && !(afterAt && notAfterAt.has(prefix))) {
         return prefix;
       }
     }
@@ -99,12 +125,13 @@ export function findReferencedNameInUnit(
   root: object,
   qnames: { has(qname: string): boolean },
   onlyProperties?: ReadonlySet<string>,
+  notAfterAt: NotAfterAt = NONE,
 ): string | null {
   let found: string | null = null;
   visitStrings(
     root,
     (value) => {
-      found ??= findReferencedName(value, qnames);
+      found ??= findReferencedName(value, qnames, notAfterAt);
       return value;
     },
     onlyProperties,
@@ -114,13 +141,19 @@ export function findReferencedNameInUnit(
 
 // Rewrites every string property (and string array item) of every element in the unit.
 // onlyProperties: rewrite only these keys (nested elements are still walked), for documents whose other text mirrors
-// an external API; "Type$Element.key" allows a key on one element type only. Returns the number of changed values.
-export function rewriteQualifiedNamesInUnit(root: object, renames: QualifiedNameMap, onlyProperties?: ReadonlySet<string>): number {
+// an external API; "Type$Element.key" allows a key on one element type only. notAfterAt: names left alone in
+// `@Module.Name` (constant calls). Returns the number of changed values.
+export function rewriteQualifiedNamesInUnit(
+  root: object,
+  renames: QualifiedNameMap,
+  onlyProperties?: ReadonlySet<string>,
+  notAfterAt: NotAfterAt = NONE,
+): number {
   let changes = 0;
   visitStrings(
     root,
     (value) => {
-      const newValue = rewriteQualifiedNames(value, renames);
+      const newValue = rewriteQualifiedNames(value, renames, notAfterAt);
       if (newValue !== value) {
         changes++;
       }

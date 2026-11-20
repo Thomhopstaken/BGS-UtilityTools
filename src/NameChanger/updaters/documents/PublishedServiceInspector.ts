@@ -53,6 +53,8 @@ export class PublishedServiceInspector implements DocumentInspector<PublishedSer
 
   usesEntity(service: PublishedServiceDocument, _info?: Readonly<Primitives.UnitInfo>): boolean {
     const renamed = new Set([...this.renames.map.keys(), this.context.newQualifiedName]);
+    // `@Module.Entity` (old or new name) is a constant call, not the entity.
+    const notAfterAt = new Set([...this.renames.notAfterAt, this.context.newQualifiedName]);
     let found: string | null = null;
     walkElements(service, (element) => {
       if (found !== null) {
@@ -60,7 +62,7 @@ export class PublishedServiceInspector implements DocumentInspector<PublishedSer
       }
       for (const [key, value] of Object.entries(element)) {
         if (!key.startsWith("$") && typeof value === "string") {
-          found = findReferencedName(value, renamed);
+          found = findReferencedName(value, renamed, notAfterAt);
           if (found !== null) {
             return;
           }

@@ -51,3 +51,17 @@ describe("rewriteExistingReferences", () => {
     expect(index.isUpToDate("page-1")).toBe(true);
   });
 });
+
+describe("rewriteExistingReferences and constant calls", () => {
+  it("leaves @Module.Entity and marks the unit up to date once the entity is rewritten", () => {
+    const entityRenames = new QualifiedNameRenames();
+    entityRenames.addEntity("M.Order", "M.Purchase", "dm-1");
+    const unit = { $ID: "page-1", $Type: "Pages$Page", name: "P", widgets: [{ $Type: "W", entity: "M.Order", caption: "@M.Order" }] } as unknown as Primitives.UnitBase & {
+      widgets: { entity: string; caption: string }[];
+    };
+    const index = new ReferenceIndex();
+    expect(rewriteExistingReferences(unit, info, entityRenames, { isSaved: () => true, index })).toBe(1);
+    expect(unit.widgets[0]).toMatchObject({ entity: "M.Purchase", caption: "@M.Order" });
+    expect(index.isUpToDate("page-1")).toBe(true);
+  });
+});

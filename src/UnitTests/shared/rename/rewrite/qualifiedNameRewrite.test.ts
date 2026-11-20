@@ -289,3 +289,47 @@ describe("findReferencedNameInUnit with onlyProperties", () => {
     expect(findReferencedNameInUnit(unit, names, new Set(["Other.microflow"]))).toBeNull();
   });
 });
+
+describe("constant calls (@Module.Name)", () => {
+  const renames = new Map([
+    ["employee.statutoryLeave", "employee.Leave"],
+    ["employee.CON_Rate", "employee.CON_Ratio"],
+  ]);
+  // The entity rename; the constant rename is not in it.
+  const notAfterAt = new Set(["employee.statutoryLeave"]);
+
+  it("leaves @Module.Entity and rewrites the entity next to it", () => {
+    expect(rewriteQualifiedNames("$x/employee.statutoryLeave/Days > @employee.statutoryLeave", renames, notAfterAt)).toBe(
+      "$x/employee.Leave/Days > @employee.statutoryLeave",
+    );
+  });
+
+  it("rewrites @Module.Constant for a constant rename (PreFixer)", () => {
+    expect(rewriteQualifiedNames("@employee.CON_Rate * 2", renames, notAfterAt)).toBe("@employee.CON_Ratio * 2");
+  });
+
+  it("rewrites @Module.Name without notAfterAt (PreFixer default)", () => {
+    expect(rewriteQualifiedNames("@employee.statutoryLeave", renames)).toBe("@employee.Leave");
+  });
+
+  it("leaves @ in the unit rewrite and counts only real references", () => {
+    const element = { $Type: "Microflows$ChangeMembersAction", value: "@employee.statutoryLeave", entity: "employee.statutoryLeave" };
+    expect(rewriteQualifiedNamesInUnit({ $Type: "Microflows$Microflow", objects: [element] }, renames, undefined, notAfterAt)).toBe(1);
+    expect(element).toMatchObject({ value: "@employee.statutoryLeave", entity: "employee.Leave" });
+  });
+
+  it("doesn't find @Module.Entity as a reference, but finds the entity and constant renames", () => {
+    expect(findReferencedName("@employee.statutoryLeave", renames, notAfterAt)).toBeNull();
+    expect(findReferencedName("@employee.statutoryLeave + employee.statutoryLeave", renames, notAfterAt)).toBe("employee.statutoryLeave");
+    expect(findReferencedName("@employee.CON_Rate", renames, notAfterAt)).toBe("employee.CON_Rate");
+    expect(findReferencedName("@employee.statutoryLeave", renames)).toBe("employee.statutoryLeave");
+    const unit = { $Type: "Microflows$Microflow", value: "@employee.statutoryLeave" };
+    expect(findReferencedNameInUnit(unit, renames, undefined, notAfterAt)).toBeNull();
+  });
+
+  it("referencesQualifiedName skips @Module.Name only when asked", () => {
+    expect(referencesQualifiedName("@employee.statutoryLeave", "employee.statutoryLeave", true)).toBe(false);
+    expect(referencesQualifiedName("@employee.statutoryLeave employee.statutoryLeave", "employee.statutoryLeave", true)).toBe(true);
+    expect(referencesQualifiedName("@employee.statutoryLeave", "employee.statutoryLeave")).toBe(true);
+  });
+});

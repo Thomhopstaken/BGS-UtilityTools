@@ -40,4 +40,8 @@ describe("entityRenames", () => {
     expect([...renames.map]).toEqual([["MyModule.Order", "MyModule.Purchase"]]);
     expect([...renames.existing((id) => id === "dm-1")]).toEqual([["MyModule.Order", "MyModule.Purchase"]]);
   });
+
+  it("marks the entity rename so constant calls (@MyModule.Order) are left alone", () => {
+    expect([...entityRenames(fakeContext()).notAfterAt]).toEqual(["MyModule.Order"]);
+  });
 });

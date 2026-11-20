@@ -86,6 +86,18 @@ describe("runPrefixRename", () => {
     expect(flows.map((f) => f.name)).toEqual(["XYZ_Order_Save", "ACT_Order_Check", "ACT_Order_Taken", "XYZ_Order_Taken"]);
   });
 
+  it("plans from the model again after a revert in Studio Pro", async () => {
+    const { fake, flows } = app();
+    const renamedNames = new RenamedDocumentNames();
+    await runPrefixRename(deps(fake, undefined, renamedNames), change);
+    expect(flows[0].name).toBe("SUB_Order_Save");
+    // Reverted in Studio Pro: the document has its old name again; the tree still shows that name.
+    flows[0].name = "ACT_Order_Save";
+    const { plan } = await runPrefixRename(deps(fake, undefined, renamedNames), change);
+    expect(plan.all().map((p) => [p.document.$ID, p.newName])).toEqual([["mf-1", "SUB_Order_Save"]]);
+    expect(flows[0].name).toBe("SUB_Order_Save");
+  });
+
   it("records the saved renames when the job throws", async () => {
     const { fake } = app();
     const renamedNames = new RenamedDocumentNames();

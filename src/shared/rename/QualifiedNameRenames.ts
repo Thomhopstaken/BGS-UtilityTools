@@ -1,4 +1,4 @@
-import { type QualifiedNameMap, qualifiedNamePrefix } from "./rewrite/qualifiedNameRewrite";
+import { type NotAfterAt, type QualifiedNameMap, qualifiedNamePrefix } from "./rewrite/qualifiedNameRewrite";
 
 // Every qualified name renamed during a job, old -> new: e.g. an entity, documents and document parameters.
 // Filled by the planners, read by the reference updaters that run after them.
@@ -9,9 +9,16 @@ export class QualifiedNameRenames {
   // Old qualified name -> ids of the units declaring it (a document and an association can share a name). A new name
   // exists in Studio Pro once every declaring unit was saved.
   private readonly owners = new Map<string, Set<string>>();
+  // Old names of entity renames: `@Module.Name` is a constant call, never rewritten for these.
+  private readonly entities = new Set<string>();
 
   get map(): ReadonlyMap<string, string> {
     return this.renames;
+  }
+
+  // Old names whose `@Module.Name` form (a constant call) is left alone; pass to the rewrite.
+  get notAfterAt(): NotAfterAt {
+    return this.entities;
   }
 
   get size(): number {
@@ -54,6 +61,16 @@ export class QualifiedNameRenames {
     console.debug(`qualified name rename: ${oldQname} -> ${newQname}${owner === undefined ? "" : ` (declared by ${owner})`}`);
   }
 
+  // An entity rename: `@Module.Name` keeps calling the constant of that name.
+  addEntity(oldQname: string, newQname: string, owner?: string): void {
+    if (oldQname === newQname) {
+      return;
+    }
+    this.add(oldQname, newQname, owner);
+    this.entities.add(oldQname);
+    console.debug(`qualified name rename ${oldQname} is an entity: constant calls @${oldQname} kept`);
+  }
+
   addDocument(moduleName: string, oldName: string, newName: string, owner?: string): void {
     this.add(`${moduleName}.${oldName}`, `${moduleName}.${newName}`, owner);
   }
@@ -70,6 +87,7 @@ export class QualifiedNameRenames {
   remove(oldQname: string): void {
     if (this.renames.delete(oldQname)) {
       this.owners.delete(oldQname);
+      this.entities.delete(oldQname);
       this.keyPrefixes = null;
       console.debug(`qualified name rename removed: ${oldQname}`);
     }

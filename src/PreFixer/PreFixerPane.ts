@@ -26,6 +26,8 @@ export interface PreFixerViewPort {
 
 export type PreFixerDeps = {
   loadData(): Promise<PreFixerData>;
+  // Checks this session's renames against the model, so a revert in Studio Pro shows up on refresh.
+  verifyRenames(): Promise<void>;
   rename(change: PrefixChange, scope: { readonly excludedModules: ReadonlySet<string> }): Promise<PrefixRunResult>;
   // Opens the document in Studio Pro's editor.
   openDocument(target: RowTarget): Promise<void>;
@@ -61,14 +63,29 @@ export class PreFixerPane {
     console.info(`prefixer: ${this.data.prefixes.length} prefixes loaded`);
   }
 
-  // Reload button: fresh prefixes, as after a run. Ignored while a rename runs.
+  // Reload button: this session's renames checked against the model, then fresh prefixes as after a run. Busy
+  // meanwhile, so no run starts on half-checked names. Ignored while a rename runs.
   async refresh(): Promise<void> {
     if (this.busy) {
       console.info("prefixer: reload ignored, a rename is running");
       return;
     }
     console.info("prefixer: reloading prefixes");
-    await this.reload();
+    this.setBusy(true);
+    try {
+      try {
+        await this.deps.verifyRenames();
+      } catch (error: unknown) {
+        console.info(`prefixer: checking renames failed: ${error}`);
+        this.view.showOutcome({
+          tone: "warning",
+          text: `Could not check the renames of this session: ${errorMessage(error)}. Reverted renames may still show.`,
+        });
+      }
+      await this.reload();
+    } finally {
+      this.setBusy(false);
+    }
   }
 
   // Called on every form change: the preview line for the current input.

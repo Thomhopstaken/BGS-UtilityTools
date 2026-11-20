@@ -77,9 +77,11 @@ export class DataSetInspector implements DocumentInspector<DataSets.DataSet> {
     return changes;
   }
 
+  // `@Module.Entity` is a constant call, not the entity.
   private queryUsesEntity(query: string): boolean {
     return (
-      referencesQualifiedName(query, this.context.oldQualifiedName) || referencesQualifiedName(query, this.context.newQualifiedName)
+      referencesQualifiedName(query, this.context.oldQualifiedName, true) ||
+      referencesQualifiedName(query, this.context.newQualifiedName, true)
     );
   }
 

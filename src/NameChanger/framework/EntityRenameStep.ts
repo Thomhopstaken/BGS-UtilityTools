@@ -64,7 +64,10 @@ export class EntityRenameStep implements JobStep<RenameReport> {
     for (const association of associations) {
       ownRenames.set(`${this.context.moduleName}.${association.oldName}`, `${this.context.moduleName}.${association.newName}`);
     }
-    const references = rewriteQualifiedNamesInUnit(domainModel, ownRenames) - keepViewEntitySource(entity, sourceDocument);
+    // `@Module.Entity` is a constant call: left alone.
+    const notAfterAt = new Set([this.context.oldQualifiedName]);
+    const references =
+      rewriteQualifiedNamesInUnit(domainModel, ownRenames, undefined, notAfterAt) - keepViewEntitySource(entity, sourceDocument);
     await this.domainModels.save(domainModel);
     report.updatedReferences += references;
     report.renamedAssociations += associations.length;

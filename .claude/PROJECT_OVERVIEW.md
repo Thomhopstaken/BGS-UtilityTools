@@ -128,6 +128,7 @@ Documents that hold text mirroring something external get an `onlyProperties` al
 - **Other entities are protected:** renaming `Order` leaves `OrderLine` alone.
 - **Taken names:** a rename onto a name that already exists is skipped and counted.
 - **Shared names:** a document and an association with the same qualified name both get the new name, or neither does (`sharedNames.ts`).
+- **Constant calls are kept:** `@Module.Name` always calls a constant, which can share its qualified name with the entity. The entity rename is recorded with `QualifiedNameRenames.addEntity`, and its `notAfterAt` set makes every rewrite and reference check skip a match right after `@` (reference pass, rename-phase saves, the entity's own domain model, dataset and published service checks). The PreFixer doesn't use `addEntity`, so it still renames `@Module.Constant`.
 
 ### Result
 
@@ -222,6 +223,7 @@ Checked and not relevant (no entity references): image and icon collections, reg
 - **API cost (lead's timings):** `loadAll` ~0.5 s per call regardless of units, `save` ~0.11 s per unit, `resolve` and `getUnitsInfo` a few ms. Fewer calls matter more than fewer units.
 - **Clicking a run log row works:** `editDocument` accepts the unit `$ID`.
 - **A changed message definition breaks its mappings,** and updating them in Studio Pro clears them.
+- **`@Module.Name` is always a constant call** (lead, 2026-11-20). Constants work this way in microflow and page expressions, domain-model expressions and XPath, and dataset OQL.
 
 **Limitations:**
 
@@ -288,7 +290,7 @@ Marked `UNVERIFIED:` in the code, and to be confirmed in Studio Pro.
   - `load`/`resolve` fetch one unit or element.
   - `projects.getModulesTree()` lists modules, folders and documents.
 - **Typed proxies:** every object has `$Type` (e.g. `"Microflows$RetrieveAction"`) and `$ID`; `switch` on `$Type` narrows the type.
-- **References are strings:** qualified names such as `"MyModule.Order"` (`shared/rename/rewrite/qualifiedNameRewrite.ts`).
+- **References are strings:** qualified names such as `"MyModule.Order"` (`shared/rename/rewrite/qualifiedNameRewrite.ts`; constants as `@Module.Constant`).
 - **Expressions are strings:** XPath and microflow expressions too (`NameChanger/updaters/shared/variableRewrite.ts`, which skips quoted literals).
 - **Writing:** set properties, then `await save(unit)`.
 

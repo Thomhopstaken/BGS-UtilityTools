@@ -58,7 +58,7 @@ export class ReferenceUpdater<TUnit extends Primitives.UnitBase = Primitives.Uni
   async update(unit: TUnit, info: Readonly<Primitives.UnitInfo>): Promise<UnitUpdateResult> {
     const scope = this.onlyProperties === undefined ? "all properties" : `[${[...this.onlyProperties].join(", ")}]`;
     console.debug(`${this.label}: checking ${scope} of ${info.moduleName}.${info.name} against ${this.renames.size} renames`);
-    const references = rewriteQualifiedNamesInUnit(unit, this.renames.map, this.onlyProperties);
+    const references = rewriteQualifiedNamesInUnit(unit, this.renames.map, this.onlyProperties, this.renames.notAfterAt);
     if (references === 0) {
       return { ...UNCHANGED };
     }

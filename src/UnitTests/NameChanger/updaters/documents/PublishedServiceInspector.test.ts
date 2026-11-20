@@ -41,6 +41,12 @@ describe("PublishedServiceInspector.usesEntity", () => {
     expect(inspector.usesEntity(rest)).toBe(true);
   });
 
+  it("is false for a constant call @Module.Entity, old or new name", () => {
+    const { inspector } = setup(false);
+    expect(inspector.usesEntity(asDoc({ ...publishedOData("MyModule.Customer"), description: "@MyModule.Order" }))).toBe(false);
+    expect(inspector.usesEntity(asDoc({ ...publishedOData("MyModule.Customer"), description: "@MyModule.Purchase" }))).toBe(false);
+  });
+
   it("is false for other entities and quoted text", () => {
     const { inspector } = setup(false);
     expect(inspector.usesEntity(asDoc(publishedOData("MyModule.OrderLine")))).toBe(false);

@@ -138,3 +138,27 @@ describe("ReferenceUpdater description and idle", () => {
     expect(updater.isIdle()).toBe(true);
   });
 });
+
+describe("ReferenceUpdater and constant calls", () => {
+  it("leaves @Module.Entity after an entity rename and rewrites the entity", async () => {
+    const renames = new QualifiedNameRenames();
+    renames.addEntity("employee.statutoryLeave", "employee.Leave", "dm-1");
+    const updater = new ReferenceUpdater({ documents: "microflows", unitType: "Microflows$Microflow" }, fakeUnitAccess<Primitives.UnitBase>([]), renames);
+    const change = { $Type: "Microflows$MemberChange", value: "if @employee.statutoryLeave > 0 then $x/employee.statutoryLeave_Person else empty" };
+    const create = { $Type: "Microflows$CreateObjectAction", entity: "employee.statutoryLeave" };
+    const unit = { $Type: "Microflows$Microflow", $ID: "mf1", name: "ACT_Leave", objects: [change, create] } as unknown as Primitives.UnitBase;
+    expect((await updater.update(unit, fakeUnitInfo("mf1", "Microflows$Microflow", "employee", "ACT_Leave"))).updatedReferences).toBe(1);
+    expect(change.value).toBe("if @employee.statutoryLeave > 0 then $x/employee.statutoryLeave_Person else empty");
+    expect(create.entity).toBe("employee.Leave");
+  });
+
+  it("rewrites @Module.Constant after a constant (document) rename, as the PreFixer does", async () => {
+    const renames = new QualifiedNameRenames();
+    renames.addDocument("employee", "statutoryLeave", "CON_statutoryLeave", "con-1");
+    const updater = new ReferenceUpdater({ documents: "microflows", unitType: "Microflows$Microflow" }, fakeUnitAccess<Primitives.UnitBase>([]), renames);
+    const change = { $Type: "Microflows$MemberChange", value: "@employee.statutoryLeave + 1" };
+    const unit = { $Type: "Microflows$Microflow", $ID: "mf1", name: "ACT_Leave", objects: [change] } as unknown as Primitives.UnitBase;
+    expect((await updater.update(unit, fakeUnitInfo("mf1", "Microflows$Microflow", "employee", "ACT_Leave"))).updatedReferences).toBe(1);
+    expect(change.value).toBe("@employee.CON_statutoryLeave + 1");
+  });
+});

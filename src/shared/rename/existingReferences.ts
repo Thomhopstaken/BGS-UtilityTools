@@ -22,8 +22,8 @@ export function rewriteExistingReferences(
   references: ExistingReferences,
   onlyProperties?: ReadonlySet<string>,
 ): number {
-  const count = rewriteQualifiedNamesInUnit(unit, renames.existing(references.isSaved), onlyProperties);
-  const pending = findReferencedNameInUnit(unit, renames.map, onlyProperties);
+  const count = rewriteQualifiedNamesInUnit(unit, renames.existing(references.isSaved), onlyProperties, renames.notAfterAt);
+  const pending = findReferencedNameInUnit(unit, renames.map, onlyProperties, renames.notAfterAt);
   if (pending === null) {
     references.index.markUpToDate(info.$ID);
   }

@@ -11,6 +11,7 @@ import { type JobStage, runJob } from "../shared/rename/RenameJob";
 import { BATCH_SIZE } from "../shared/rename/RenamePlanner";
 import type { ProgressRunner, UnitAccess, UnitUpdater } from "../shared/rename/types";
 import { UnitInfoCache } from "../shared/rename/UnitInfoCache";
+import { currentNameLoader } from "./currentNames";
 import { groupLabel, typesOfGroup } from "./documentTypes";
 import type { InModule } from "./framework/domainNames";
 import { MarketplaceScanStep } from "./framework/MarketplaceScanStep";
@@ -65,6 +66,7 @@ export async function runPrefixRename(deps: PrefixServiceDeps, change: PrefixCha
     {
       kind: "step",
       step: new PrefixPrepareStep({
+        verifyRenames: () => deps.renamedNames.verify(currentNameLoader(model)),
         getModulesTree: async () => deps.renamedNames.correct(await model.projects.getModulesTree()),
         loadDomainModels: () => loadOwn<DomainModels.DomainModel>(model.domainModels, "DomainModels$DomainModel", unitInfos, scope),
         loadModuleSecurities: () => loadOwn<Security.ModuleSecurity>(model.moduleSecurity, "Security$ModuleSecurity", unitInfos, scope),

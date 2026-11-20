@@ -19,6 +19,7 @@ const tree = [
 
 function deps(overrides: Partial<PrefixPrepareDeps> = {}): PrefixPrepareDeps {
   return {
+    verifyRenames: vi.fn(async () => undefined),
     getModulesTree: vi.fn(async () => tree),
     loadDomainModels: vi.fn(async () => [{ moduleName: "M", unit: { entities: [{ name: "Order" }] } as unknown as DomainModels.DomainModel }]),
     loadModuleSecurities: vi.fn(async () => []),
@@ -66,5 +67,28 @@ describe("PrefixPrepareStep", () => {
     });
     expect(await new PrefixPrepareStep(noTree).run(new JobReport())).toBe("Could not prepare the rename: Error: busy");
     expect(noTree.loadDomainModels).not.toHaveBeenCalled();
+  });
+
+  it("checks this session's renames before reading the tree", async () => {
+    const order: string[] = [];
+    const stepDeps = deps({
+      verifyRenames: vi.fn(async () => {
+        order.push("verify");
+      }),
+      getModulesTree: vi.fn(async () => {
+        order.push("tree");
+        return tree;
+      }),
+    });
+    expect(await new PrefixPrepareStep(stepDeps).run(new JobReport())).toBe(true);
+    expect(order).toEqual(["verify", "tree"]);
+  });
+
+  it("stops the job when the renames can't be checked", async () => {
+    const stepDeps = deps({ verifyRenames: vi.fn(async () => Promise.reject(new Error("could not load Microflows$Microflow: offline"))) });
+    expect(await new PrefixPrepareStep(stepDeps).run(new JobReport())).toBe(
+      "Could not prepare the rename: Error: could not load Microflows$Microflow: offline",
+    );
+    expect(stepDeps.getModulesTree).not.toHaveBeenCalled();
   });
 });
