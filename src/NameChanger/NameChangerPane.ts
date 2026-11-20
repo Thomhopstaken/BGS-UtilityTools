@@ -33,6 +33,8 @@ export type RenameScope =Pick<RenameServiceDeps, "excludedModules" | "allEntityN
 
 export type PaneDeps = {
   loadData(): Promise<PaneData>;
+  // One module's entities, sorted; called on every module pick.
+  loadEntities(moduleName: string): Promise<readonly EntityOption[]>;
   rename(request: RenameRequest, scope: RenameScope): Promise<RenameRunResult>;
   // Opens the document in Studio Pro's editor.
   openDocument(target: RowTarget): Promise<void>;
@@ -70,11 +72,44 @@ export class NameChangerPane {
     console.info(`pane: ${this.data.byModule.size} modules loaded`);
   }
 
-  selectModule(moduleName: string): void {
+  // Reload button: fresh modules, a revert in Studio Pro may have changed them. Ignored while a rename runs.
+  async reload(): Promise<void> {
+    if (this.busy) {
+      console.info("pane: reload ignored, a rename is running");
+      return;
+    }
+    console.info("pane: reloading modules");
+    await this.load();
+  }
+
+  // Known entities right away, then the module's entities reloaded (a revert may have changed them).
+  async selectModule(moduleName: string): Promise<void> {
     console.debug(`pane: module '${moduleName}' selected`);
     this.moduleName = moduleName;
     this.view.clearFieldErrors();
-    this.view.setEntities(moduleName === "" ? null : (this.data.byModule.get(moduleName) ?? []));
+    if (moduleName === "") {
+      this.view.setEntities(null);
+      return;
+    }
+    this.view.setEntities(this.data.byModule.get(moduleName) ?? []);
+    let fresh: readonly EntityOption[];
+    try {
+      fresh = await this.deps.loadEntities(moduleName);
+    } catch (error: unknown) {
+      console.info(`pane: reloading entities of '${moduleName}' failed: ${error}`);
+      if (this.moduleName === moduleName) {
+        this.view.showOutcome({ tone: "warning", text: `Could not reload the entities of ${moduleName}: ${errorMessage(error)}` });
+      }
+      return;
+    }
+    // Another module picked, or a rename started meanwhile: this result is stale.
+    if (this.moduleName !== moduleName || this.busy) {
+      console.debug(`pane: entities of '${moduleName}' dropped, selection or state changed`);
+      return;
+    }
+    this.data = { ...this.data, byModule: new Map(this.data.byModule).set(moduleName, fresh) };
+    this.view.setEntities(fresh, this.view.readRequest().entityId);
+    console.info(`pane: ${fresh.length} entities reloaded for '${moduleName}'`);
   }
 
   // From the domain model context menu: fresh data, then the module selected and its entities listed.

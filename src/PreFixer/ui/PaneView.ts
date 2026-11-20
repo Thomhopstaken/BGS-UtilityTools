@@ -16,6 +16,7 @@ export class PaneView implements PreFixerViewPort {
   private readonly removePrefixBox: HTMLInputElement;
   private readonly preview: HTMLElement;
   private readonly submitButton: HTMLButtonElement;
+  private readonly reloadButton: HTMLButtonElement;
   private readonly errors: Record<PrefixField, { control: HTMLInputElement | HTMLSelectElement; message: HTMLElement }>;
   private readonly outcome: HTMLElement;
   private readonly runLog: RunLogView;
@@ -29,6 +30,7 @@ export class PaneView implements PreFixerViewPort {
     this.removePrefixBox = requireElement(root, "#removePrefixBox", HTMLInputElement);
     this.preview = requireElement(root, "#preview", HTMLElement);
     this.submitButton = requireElement(root, "#renamePrefix", HTMLButtonElement);
+    this.reloadButton = requireElement(root, "#reloadPrefixes", HTMLButtonElement);
     this.errors = {
       prefix: { control: this.prefixSelect, message: requireElement(root, "#prefixError", HTMLElement) },
       newPrefix: { control: this.newPrefixInput, message: requireElement(root, "#newPrefixError", HTMLElement) },
@@ -57,6 +59,11 @@ export class PaneView implements PreFixerViewPort {
     for (const control of [this.prefixSelect, this.newPrefixInput, this.removePrefixBox]) {
       control.addEventListener(control === this.newPrefixInput ? "input" : "change", handler);
     }
+  }
+
+  // The reload button beside the prefix picker.
+  onReload(handler: () => void): void {
+    this.reloadButton.addEventListener("click", () => handler());
   }
 
   onClearLog(handler: () => void): void {
@@ -124,7 +131,7 @@ export class PaneView implements PreFixerViewPort {
   // Second guard next to the modal progress dialog: no new run can start while one is busy.
   setBusy(busy: boolean): void {
     this.busy = busy;
-    for (const control of [this.prefixSelect, this.removePrefixBox, this.submitButton]) {
+    for (const control of [this.prefixSelect, this.reloadButton, this.removePrefixBox, this.submitButton]) {
       control.disabled = busy;
     }
     this.runLog.setBusy(busy);

@@ -3,7 +3,7 @@ import * as Mx from "@mendix/extensions-api";
 import { injectStyles, mountPane } from "../shared/design/pane";
 import { applyTheme } from "../shared/design/theme";
 import { NameChangerPane } from "./NameChangerPane";
-import { loadPaneData } from "./moduleModel";
+import { loadModuleEntities, loadPaneData } from "./moduleModel";
 import { connectPane } from "./paneMessages";
 import { runEntityRename } from "./renameService";
 import markup from "./ui/pane.html";
@@ -20,6 +20,8 @@ export const component: Mx.IComponent = {
     const view = new PaneView(mountPane(document, markup));
     const pane = new NameChangerPane(view, {
       loadData: () => loadPaneData(model.modules, model.domainModels),
+      // UNVERIFIED: loadAll returns the reverted state after an undo/revert in Studio Pro, not a cached unit.
+      loadEntities: (moduleName) => loadModuleEntities(model.domainModels, moduleName),
       rename: (request, scope) =>
         runEntityRename(
           { ...scope, model, runProgress: (title, steps) => studioPro.ui.dialogs.showProgressDialog(title, steps) },
@@ -35,8 +37,9 @@ export const component: Mx.IComponent = {
     });
     view.onSubmit(() => void pane.submit());
     view.onOpenDocument((target) => void pane.openDocument(target));
-    view.onModuleChange((moduleName) => pane.selectModule(moduleName));
+    view.onModuleChange((moduleName) => void pane.selectModule(moduleName));
     view.onClearLog(() => pane.clearLog());
+    view.onReload(() => void pane.reload());
     await pane.load();
     await connectPane(studioPro.ui.messagePassing, (moduleName) => pane.preselectModule(moduleName));
   },

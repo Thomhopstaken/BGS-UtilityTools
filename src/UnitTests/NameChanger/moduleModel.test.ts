@@ -1,6 +1,6 @@
 import type * as Mx from "@mendix/extensions-api";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { getEntities, loadPaneData } from "../../NameChanger/moduleModel";
+import { getEntities, loadModuleEntities, loadPaneData } from "../../NameChanger/moduleModel";
 import { fakeUnitInfo } from "../shared/helpers/fakes";
 
 // The real package needs Studio Pro at runtime; only getContainer is used.
@@ -30,6 +30,30 @@ describe("getEntities", () => {
     expect(filter({ moduleName: "Atlas_Core" } as Mx.Primitives.UnitInfo)).toBe(false);
     expect(filter({ moduleName: "System" } as Mx.Primitives.UnitInfo)).toBe(false);
     expect(filter({} as Mx.Primitives.UnitInfo)).toBe(false);
+  });
+});
+
+describe("loadModuleEntities", () => {
+  it("loads only the module's domain model and returns its entities sorted", async () => {
+    getContainer.mockReturnValue({ $ID: "dm-1" });
+    const loadAll = vi.fn(async (_filter: (info: Mx.Primitives.UnitInfo) => boolean, _max?: number) =>
+      [{ entities: [entity("Order"), entity("Customer")] }] as unknown as Mx.DomainModels.DomainModel[],
+    );
+    const getUnitsInfo = vi.fn(async () => domainModelInfos);
+    const domainModels = { loadAll, getUnitsInfo } as unknown as Parameters<typeof loadModuleEntities>[0];
+    const options = await loadModuleEntities(domainModels, "MyModule");
+    expect(options.map((o) => o.name)).toEqual(["Customer", "Order"]);
+    const [filter, max] = loadAll.mock.calls[0];
+    expect(max).toBe(1);
+    expect(filter({ moduleName: "MyModule" } as Mx.Primitives.UnitInfo)).toBe(true);
+    expect(filter({ moduleName: "Other" } as Mx.Primitives.UnitInfo)).toBe(false);
+  });
+
+  it("returns no entities for a module without a domain model", async () => {
+    const loadAll = vi.fn(async () => [] as Mx.DomainModels.DomainModel[]);
+    const getUnitsInfo = vi.fn(async () => domainModelInfos);
+    const domainModels = { loadAll, getUnitsInfo } as unknown as Parameters<typeof loadModuleEntities>[0];
+    expect(await loadModuleEntities(domainModels, "Gone")).toEqual([]);
   });
 });
 

@@ -39,6 +39,33 @@ describe.each(PANES)("$tool pane markup", ({ tool, path, slots }) => {
   });
 });
 
+describe.each([
+  { tool: "NameChanger", path: "src/NameChanger/ui/pane.html", select: "moduleDropdown", button: "reloadModules", label: "Reload modules" },
+  { tool: "PreFixer", path: "src/PreFixer/ui/pane.html", select: "prefixDropdown", button: "reloadPrefixes", label: "Reload prefixes" },
+])("$tool reload button", ({ path, select, button, label }) => {
+  const markup = read(path);
+
+  it("sits beside the picker in a field row, as an icon button without caption", () => {
+    const row = markup.match(/<div class="bgs-field__row">([\s\S]*?)<\/div>/)?.[1] ?? "";
+    expect(row).toContain(`id="${select}"`);
+    expect(row).toMatch(new RegExp(`<button\\s+type="button"\\s+class="bgs-btn bgs-btn--icon bgs-btn--reload"\\s+id="${button}"`));
+    expect(row).toContain(`aria-label="${label}"`);
+    expect(row).toContain(`title="${label}"`);
+    expect(row).toMatch(/><\/button>/);
+    expect(markup.split(`id="${button}"`).length - 1).toBe(1);
+  });
+});
+
+describe("icon button styles", () => {
+  const css = read("src/shared/design/bundle.css");
+
+  it("styles the icon button, the reload glyph and the field row", () => {
+    for (const selector of [".bgs-btn--icon {", ".bgs-btn--reload::before {", ".bgs-field__row {", ".bgs-field__row > .bgs-input {"]) {
+      expect(css, selector).toContain(selector);
+    }
+  });
+});
+
 describe("ClassSearcher pane markup", () => {
   const markup = read("src/ClassSearcher/ui/pane.html");
 

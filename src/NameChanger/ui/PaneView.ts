@@ -16,6 +16,7 @@ export class PaneView implements PaneViewPort {
   private readonly nameInput: HTMLInputElement;
   private readonly exposedNamesBox: HTMLInputElement;
   private readonly submitButton: HTMLButtonElement;
+  private readonly reloadButton: HTMLButtonElement;
   private readonly errors: Record<PaneField, { control: HTMLInputElement | HTMLSelectElement; message: HTMLElement }>;
   private readonly outcome: HTMLElement;
   private readonly runLog: RunLogView;
@@ -30,6 +31,7 @@ export class PaneView implements PaneViewPort {
     this.nameInput = requireElement(root, "#nameInput", HTMLInputElement);
     this.exposedNamesBox = requireElement(root, "#exposedNamesBox", HTMLInputElement);
     this.submitButton = requireElement(root, "#changeName", HTMLButtonElement);
+    this.reloadButton = requireElement(root, "#reloadModules", HTMLButtonElement);
     this.errors = {
       module: { control: this.moduleSelect, message: requireElement(root, "#moduleError", HTMLElement) },
       entity: { control: this.entitySelect, message: requireElement(root, "#entityError", HTMLElement) },
@@ -50,6 +52,11 @@ export class PaneView implements PaneViewPort {
 
   onModuleChange(handler: (moduleName: string) => void): void {
     this.moduleSelect.addEventListener("change", () => handler(this.moduleSelect.value));
+  }
+
+  // The reload button beside the module picker.
+  onReload(handler: () => void): void {
+    this.reloadButton.addEventListener("click", () => handler());
   }
 
   onClearLog(handler: () => void): void {
@@ -112,7 +119,7 @@ export class PaneView implements PaneViewPort {
   // Second guard next to the modal progress dialog: no new run can start while one is busy.
   setBusy(busy: boolean): void {
     this.busy = busy;
-    for (const control of [this.moduleSelect, this.nameInput, this.exposedNamesBox, this.submitButton]) {
+    for (const control of [this.moduleSelect, this.reloadButton, this.nameInput, this.exposedNamesBox, this.submitButton]) {
       control.disabled = busy;
     }
     this.runLog.setBusy(busy);

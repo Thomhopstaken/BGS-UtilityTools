@@ -9,9 +9,18 @@
       <form id="renameForm" novalidate>
         <div class="bgs-field">
           <label class="bgs-label" for="moduleDropdown">Select Module</label>
-          <select class="bgs-input" id="moduleDropdown" aria-describedby="moduleError">
-            <option value="">Loading…</option>
-          </select>
+          <div class="bgs-field__row">
+            <select class="bgs-input" id="moduleDropdown" aria-describedby="moduleError">
+              <option value="">Loading…</option>
+            </select>
+            <button
+              type="button"
+              class="bgs-btn bgs-btn--icon bgs-btn--reload"
+              id="reloadModules"
+              aria-label="Reload modules"
+              title="Reload modules"
+            ></button>
+          </div>
           <span class="bgs-field__error" id="moduleError" hidden></span>
         </div>
         <div class="bgs-field">
@@ -199,6 +208,13 @@
           <p>
             This tool is built on Mendix's Extensibility API for Studio Pro 11.12. The API is in beta, so behaviour can
             change between Studio Pro versions.
+          </p>
+          <p>
+            Changes made through the API can leave stale errors on pages that use the changed documents. Refreshing or
+            updating the page usually clears them.
+          </p>
+          <p>
+            Documents that are open in the modeler keep their old names in their tabs and have to be committed manually.
           </p>
         </div>
       </details>

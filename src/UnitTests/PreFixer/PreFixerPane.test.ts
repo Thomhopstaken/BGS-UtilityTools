@@ -224,6 +224,42 @@ describe("PreFixerPane.submit", () => {
   });
 });
 
+describe("PreFixerPane.refresh", () => {
+  it("loads the prefixes again and updates the preview, keeping the form", async () => {
+    const loadData = vi.fn().mockResolvedValueOnce(data).mockResolvedValueOnce({ ...data, prefixes: [pop] });
+    const { view, pane } = setup({ loadData });
+    await pane.load();
+    await pane.refresh();
+    expect(loadData).toHaveBeenCalledTimes(2);
+    expect(view.prefixes).toEqual([[act, pop], [pop]]);
+    expect(view.previews).toHaveLength(2);
+    expect(view.resets).toBe(0);
+  });
+
+  it("warns and keeps the prefixes when the reload fails", async () => {
+    const loadData = vi.fn().mockResolvedValueOnce(data).mockRejectedValueOnce(new Error("offline"));
+    const { view, pane } = setup({ loadData });
+    await pane.load();
+    await pane.refresh();
+    expect(view.outcome).toEqual([{ tone: "warning", text: "Could not reload the prefixes: offline" }]);
+    expect(view.prefixes).toEqual([[act, pop]]);
+  });
+
+  it("is ignored while a rename runs", async () => {
+    let finish: (value: PrefixRunResult) => void = () => undefined;
+    const rename = vi.fn(() => new Promise<PrefixRunResult>((resolve) => (finish = resolve)));
+    const { view, deps, pane } = setup({ rename });
+    await pane.load();
+    view.request = { prefixKey: "flows:ACT", newPrefix: "SUB", removePrefix: false };
+    const running = pane.submit();
+    await vi.waitFor(() => expect(rename).toHaveBeenCalledOnce());
+    await pane.refresh();
+    expect(deps.loadData).toHaveBeenCalledOnce();
+    finish(result(0));
+    await running;
+  });
+});
+
 describe("PreFixerPane.openDocument and clearLog", () => {
   it("opens a document, or shows why it couldn't", async () => {
     const openDocument = vi.fn(async () => Promise.reject(new Error("gone")));

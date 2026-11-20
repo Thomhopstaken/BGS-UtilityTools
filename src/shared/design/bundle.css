@@ -161,6 +161,13 @@ select.bgs-input { padding-right: var(--space-1); }
 .bgs-status-list:empty { display: none; }
 .bgs-btn--sm { height: 20px; padding: 0 var(--space-2); font-size: 11px; }
 
+/* Icon button: square secondary button, no caption; aria-label and title name it. Glyph per modifier */
+.bgs-btn--icon { flex: none; width: var(--control-height); padding: 0; font-size: 14px; line-height: 1; }
+.bgs-btn--reload::before { content: "\21BB"; }
+/* Field row: a control with an icon button beside it */
+.bgs-field__row { display: flex; gap: var(--space-1); }
+.bgs-field__row > .bgs-input { flex: 1; min-width: 0; }
+
 /* Run log: header, counts, groups of rows */
 .bgs-runlog { margin-top: var(--space-3); border: 1px solid var(--hairline); border-radius: var(--radius-md); overflow: hidden; }
 .bgs-runlog[hidden] { display: none; }

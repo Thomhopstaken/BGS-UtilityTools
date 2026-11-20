@@ -61,6 +61,16 @@ export class PreFixerPane {
     console.info(`prefixer: ${this.data.prefixes.length} prefixes loaded`);
   }
 
+  // Reload button: fresh prefixes, as after a run. Ignored while a rename runs.
+  async refresh(): Promise<void> {
+    if (this.busy) {
+      console.info("prefixer: reload ignored, a rename is running");
+      return;
+    }
+    console.info("prefixer: reloading prefixes");
+    await this.reload();
+  }
+
   // Called on every form change: the preview line for the current input.
   updatePreview(): void {
     const request = this.view.readRequest();
@@ -154,12 +164,13 @@ export class PreFixerPane {
     }
   }
 
-  // After a run: fresh prefixes; a failure keeps the outcome and only adds a warning.
+  // After a run or on refresh: fresh prefixes; a failure keeps the outcome and only adds a warning.
   private async reload(): Promise<void> {
     try {
       this.data = await this.deps.loadData();
       this.view.setPrefixes(this.data.prefixes);
       this.updatePreview();
+      console.info(`prefixer: ${this.data.prefixes.length} prefixes reloaded`);
     } catch (error: unknown) {
       console.info(`prefixer: reload failed: ${error}`);
       this.view.showOutcome({ tone: "warning", text: `Could not reload the prefixes: ${errorMessage(error)}` });

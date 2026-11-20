@@ -80,24 +80,42 @@ function setup(
   rename: PaneDeps["rename"] = async () => ran("Success", true),
   loads: PaneData[] = [data({ MyModule: ["Order", "Customer"], Other: ["Invoice"] })],
   confirm: PaneDeps["confirm"] = async () => true,
+  loadEntities?: PaneDeps["loadEntities"],
 ) {
   const view = new FakeView();
+  // Module entities come from the last loaded data unless the test fakes them.
+  let last = loads[0];
   const loadData = vi.fn(async () => {
     const next = loads.length > 1 ? loads.shift()! : loads[0];
+    last = next;
     return next;
   });
+  const loadEntitiesSpy = vi.fn(loadEntities ?? (async (moduleName: string) => last.byModule.get(moduleName) ?? []));
   const renameSpy = vi.fn(rename);
   const openDocument = vi.fn(async (_target: RowTarget) => {});
   const confirmSpy = vi.fn(confirm);
   let tick = 0;
-  const pane = new NameChangerPane(view, { loadData, rename: renameSpy, openDocument, confirm: confirmSpy, now: () => new Date(2026, 9, 9, 10, 0, tick++) });
-  return { view, pane, loadData, rename: renameSpy, openDocument, confirm: confirmSpy };
+  const pane = new NameChangerPane(view, {
+    loadData,
+    loadEntities: loadEntitiesSpy,
+    rename: renameSpy,
+    openDocument,
+    confirm: confirmSpy,
+    now: () => new Date(2026, 9, 9, 10, 0, tick++),
+  });
+  return { view, pane, loadData, loadEntities: loadEntitiesSpy, rename: renameSpy, openDocument, confirm: confirmSpy };
 }
 
-async function loadedWithRequest(newName: string, rename?: PaneDeps["rename"], loads?: PaneData[], confirm?: PaneDeps["confirm"]) {
-  const s = setup(rename, loads, confirm);
+async function loadedWithRequest(
+  newName: string,
+  rename?: PaneDeps["rename"],
+  loads?: PaneData[],
+  confirm?: PaneDeps["confirm"],
+  loadEntities?: PaneDeps["loadEntities"],
+) {
+  const s = setup(rename, loads, confirm, loadEntities);
   await s.pane.load();
-  s.pane.selectModule("MyModule");
+  await s.pane.selectModule("MyModule");
   s.view.request = { moduleName: "MyModule", entityId: "id-Order", newName, renameExposedNames: false };
   return s;
 }
@@ -112,7 +130,13 @@ describe("NameChangerPane.load", () => {
 
   it("shows an error when loading fails", async () => {
     const view = new FakeView();
-    const pane = new NameChangerPane(view, { loadData: () => Promise.reject(new Error("no model")), rename: vi.fn(), openDocument: vi.fn(), confirm: vi.fn() });
+    const pane = new NameChangerPane(view, {
+      loadData: () => Promise.reject(new Error("no model")),
+      loadEntities: vi.fn(),
+      rename: vi.fn(),
+      openDocument: vi.fn(),
+      confirm: vi.fn(),
+    });
     await pane.load();
     expect(view.outcome).toEqual([{ tone: "error", text: "Could not load entities: no model" }]);
     expect(view.modules).toEqual([]);
@@ -121,14 +145,81 @@ describe("NameChangerPane.load", () => {
 
 describe("NameChangerPane.selectModule", () => {
   it("shows the module's entities, or disables the picker without a module", async () => {
-    const { view, pane } = setup();
+    const { view, pane, loadEntities } = setup();
     await pane.load();
-    pane.selectModule("Other");
-    expect(view.entities.at(-1)).toEqual({ options: [option("Invoice", "Other")], selectedId: undefined });
-    pane.selectModule("");
+    await pane.selectModule("Other");
+    expect(view.entities.at(-1)).toEqual({ options: [option("Invoice", "Other")], selectedId: "" });
+    await pane.selectModule("");
     expect(view.entities.at(-1)).toEqual({ options: null, selectedId: undefined });
-    pane.selectModule("Gone");
+    await pane.selectModule("Gone");
     expect(view.entities.at(-1)?.options).toEqual([]);
+    expect(loadEntities.mock.calls).toEqual([["Other"], ["Gone"]]);
+  });
+
+  it("shows the known entities at once, then the reloaded ones with the selected entity kept", async () => {
+    let finish!: (options: readonly EntityOption[]) => void;
+    const { view, pane } = setup(undefined, undefined, undefined, () => new Promise((resolve) => (finish = resolve)));
+    await pane.load();
+    const picking = pane.selectModule("MyModule");
+    expect(view.entities.at(-1)).toEqual({ options: [option("Order"), option("Customer")], selectedId: undefined });
+    view.request = { ...view.request, moduleName: "MyModule", entityId: "id-Order" };
+    finish([option("Order"), option("Reverted")]);
+    await picking;
+    expect(view.entities.at(-1)).toEqual({ options: [option("Order"), option("Reverted")], selectedId: "id-Order" });
+  });
+
+  it("validates against the reloaded entities", async () => {
+    const { view, pane, rename } = await loadedWithRequest("Purchase", undefined, undefined, undefined, async () => [option("Customer")]);
+    await pane.submit();
+    expect(view.fieldErrors).toEqual([{ field: "entity", message: "Select an entity to rename." }]);
+    expect(rename).not.toHaveBeenCalled();
+  });
+
+  it("warns and keeps the known entities when the reload fails", async () => {
+    const { view, pane } = setup(undefined, undefined, undefined, () => Promise.reject(new Error("offline")));
+    await pane.load();
+    await pane.selectModule("MyModule");
+    expect(view.outcome).toEqual([{ tone: "warning", text: "Could not reload the entities of MyModule: offline" }]);
+    expect(view.entities.at(-1)?.options).toEqual([option("Order"), option("Customer")]);
+  });
+
+  it("drops a reload that finishes after another module was picked", async () => {
+    const pending = new Map<string, (options: readonly EntityOption[]) => void>();
+    const { view, pane } = setup(undefined, undefined, undefined, (moduleName) => new Promise((resolve) => pending.set(moduleName, resolve)));
+    await pane.load();
+    const first = pane.selectModule("MyModule");
+    const second = pane.selectModule("Other");
+    pending.get("Other")!([option("Invoice", "Other")]);
+    await second;
+    pending.get("MyModule")!([option("Stale")]);
+    await first;
+    expect(view.entities.at(-1)).toEqual({ options: [option("Invoice", "Other")], selectedId: "" });
+  });
+});
+
+describe("NameChangerPane.reload", () => {
+  it("loads the modules again and clears the selection", async () => {
+    const fresh = data({ Other: ["Invoice"] });
+    const { view, pane, loadData } = setup(undefined, [data({ MyModule: ["Order"], Other: ["Invoice"] }), fresh]);
+    await pane.load();
+    await pane.selectModule("MyModule");
+    await pane.reload();
+    expect(loadData).toHaveBeenCalledTimes(2);
+    expect(view.modules.at(-1)).toEqual({ names: ["Other"], selected: undefined });
+    expect(view.entities.at(-1)).toEqual({ options: null, selectedId: undefined });
+  });
+
+  it("is ignored while a rename runs", async () => {
+    let finish!: (r: RenameRunResult) => void;
+    const { view, pane, loadData, rename } = await loadedWithRequest("Purchase", () => new Promise((resolve) => (finish = resolve)));
+    const running = pane.submit();
+    await vi.waitFor(() => expect(rename).toHaveBeenCalledOnce());
+    const modules = view.modules.length;
+    await pane.reload();
+    expect(view.modules.length).toBe(modules);
+    expect(loadData).toHaveBeenCalledTimes(1);
+    finish(ran("UserCancelled", false));
+    await running;
   });
 });
 
@@ -149,7 +240,7 @@ describe("NameChangerPane.preselectModule", () => {
   ])("warns for module %s and clears the selection", async (moduleName, text) => {
     const { view, pane } = setup();
     await pane.load();
-    pane.selectModule("MyModule");
+    await pane.selectModule("MyModule");
     await pane.preselectModule(moduleName);
     expect(view.outcome).toEqual([{ tone: "warning", text }]);
     expect(view.modules.at(-1)).toEqual({ names: ["MyModule", "Other"], selected: undefined });
@@ -273,14 +364,20 @@ describe("NameChangerPane.submit", () => {
     expect(loadData).toHaveBeenCalledTimes(1);
     expect(view.modules.at(-1)).toEqual({ names: ["MyModule", "Other"], selected: undefined });
     expect(view.entities.at(-1)).toEqual({ options: null, selectedId: undefined });
-    pane.selectModule("MyModule");
+    void pane.selectModule("MyModule");
+    // The known (patched) entities, before the module reload answers.
     expect(view.entities.at(-1)?.options).toEqual([option("Customer"), { ...option("Order"), name: "Zebra" }]);
   });
 
   it("protects the renamed entity's new name in the next rename", async () => {
-    const { view, pane, rename } = await loadedWithRequest("Purchase");
+    // The model before and after the rename.
+    const loadEntities = vi
+      .fn<PaneDeps["loadEntities"]>()
+      .mockResolvedValueOnce([option("Customer"), option("Order")])
+      .mockResolvedValue([option("Customer"), { ...option("Order"), name: "Purchase" }]);
+    const { view, pane, rename } = await loadedWithRequest("Purchase", undefined, undefined, undefined, loadEntities);
     await pane.submit();
-    pane.selectModule("MyModule");
+    await pane.selectModule("MyModule");
     view.request = { moduleName: "MyModule", entityId: "id-Customer", newName: "Client", renameExposedNames: false };
     await pane.submit();
     expect(rename.mock.calls[1][1]).toMatchObject({ allEntityNames: ["Customer", "Purchase", "Invoice"], entityNamesInModule: ["Customer", "Purchase"] });

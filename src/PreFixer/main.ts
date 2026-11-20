@@ -36,6 +36,7 @@ export const component: Mx.IComponent = {
     view.onChange(() => pane.updatePreview());
     view.onOpenDocument((target) => void pane.openDocument(target));
     view.onClearLog(() => pane.clearLog());
+    view.onReload(() => void pane.refresh());
     await pane.load();
   },
 };
