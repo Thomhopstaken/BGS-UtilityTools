@@ -4,13 +4,13 @@
 
 BGS-UtilityTools is a **Mendix Studio Pro web extension** written in TypeScript on `@mendix/extensions-api` (`0.11.2-mendix.11.12.2`, beta). Studio Pro hosts it in an embedded browser (WebView2), where it can read and change the open app model.
 
-It is meant to grow into a toolbox (`ToDo.md`):
 
 | #   | Tool                                                                                                                     | Status                                   |
 | --- | ------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------- |
 | 1   | **NameChanger**: rename an entity and everything named after it                                                          | Built      |
 | 2   | **PreFixer**: rename or remove a document prefix per document type, with every reference (§11)                           | Built        |
 | 3   | **ClassSearcher**: find the elements that use a CSS class, shown as a tree (§12). Removing and adding classes come later | Search built, further updated planned |
+| 4   | **Flowbuilder**: generating standardized templates for flows like ACT_{}_Save flows, Validations or log flows | refinement / to-do |
 
 Tool names are one PascalCase word that says what the tool does (NameChanger, PreFixer, ClassSearcher). The same name is the pane title, the menu caption and the `src/` folder.
 
